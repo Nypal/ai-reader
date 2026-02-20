@@ -1,0 +1,157 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  color-scheme: light dark;
+
+  /* Focus Neutral - Light */
+  --bg: #F6F7FB;
+  --surface: #FFFFFF;
+  --text: #0B1220;
+  --text-muted: #334155;
+
+  --primary: #2563EB;
+  --on-primary: #FFFFFF;
+
+  --secondary: #475569;
+  --on-secondary: #FFFFFF;
+
+  --accent: #EA580C;
+  --on-accent: #0B1220;
+
+  --border: rgba(15, 23, 42, 0.12);
+  --focus-ring: rgba(37, 99, 235, 0.7);
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radius & Shadows */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 6px 20px rgba(0, 0, 0, 0.12);
+
+  /* Typography */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  --reader-font-size: 17px;
+  --reader-line-height: 1.6;
+  --reader-max-width: 68ch;
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+
+  --dur-fast: 120ms;
+  --dur-med: 180ms;
+  --dur-slow: 240ms;
+}
+
+[data-theme='dark'] {
+  /* Focus Neutral - Dark */
+  --bg: #0B1220;
+  --surface: #111827;
+  --text: #E5E7EB;
+  --text-muted: #94A3B8;
+  --primary: #2563EB;
+  --on-primary: #FFFFFF;
+  --secondary: #334155;
+  --on-secondary: #E5E7EB;
+  --accent: #F97316;
+  --on-accent: #0B1220;
+  --border: rgba(148, 163, 184, 0.18);
+  --focus-ring: rgba(56, 189, 248, 0.65);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  color: var(--text);
+  line-height: var(--reader-line-height);
+  font-size: 16px;
+  transition: background-color var(--dur-slow) var(--ease-standard), color var(--dur-slow) var(--ease-standard);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+p {
+  color: var(--text-muted);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+a:hover {
+  color: var(--accent);
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  background: none;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Base utility classes for layout */
+.container {
+  max-width: var(--reader-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Global focus styles for accessibility */
+::selection {
+  background-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

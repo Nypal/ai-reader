@@ -1,0 +1,233 @@
+/* Added mobile query to InputView.css */
+/* Same content but appended media query */
+.input-view {
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.input-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.input-header h2 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+}
+
+.input-header p {
+    font-size: 1.125rem;
+}
+
+.input-area-wrapper {
+    width: 100%;
+    max-width: 680px;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+    transition: box-shadow var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+
+.input-area-wrapper:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.main-textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: 1.5rem;
+    border: none;
+    resize: vertical;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1.125rem;
+    line-height: 1.6;
+}
+
+.main-textarea:focus {
+    outline: none;
+}
+
+.main-textarea::placeholder {
+    color: color-mix(in srgb, var(--text-muted) 50%, transparent);
+}
+
+.input-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background-color: var(--bg);
+    border-top: 1px solid var(--border);
+    gap: 1rem;
+}
+
+.icon-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+    background-color: var(--border);
+    color: var(--text);
+}
+
+.icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.primary-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--primary);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    font-size: 1rem;
+    box-shadow: var(--shadow-1);
+    cursor: pointer;
+    border: none;
+}
+
+.primary-btn:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--primary) 85%, #000);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
+}
+
+.primary-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .input-header h2 {
+        font-size: 1.5rem;
+    }
+
+    .input-header p {
+        font-size: 1rem;
+    }
+
+    .input-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .icon-btn,
+    .primary-btn {
+        justify-content: center;
+        width: 100%;
+    }
+}
+
+/* Diagnostics Panel Styles */
+.left-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.diagnostics-btn {
+    background-color: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    color: var(--text-muted);
+}
+
+.diagnostics-btn:hover {
+    background-color: var(--primary);
+    color: white;
+}
+
+.diagnostics-panel {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    animation: slideUp 0.3s ease-out;
+}
+
+.test-list {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.test-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.95rem;
+}
+
+.test-list li {
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.test-list li:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.fix-hint {
+    margin-top: 0.5rem;
+    margin-left: 2.25rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background-color: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--primary);
+}
+
+.log-panel {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #1a1b1e;
+    color: #a0a0a0;
+    font-family: monospace;
+    font-size: 0.85rem;
+    border-radius: var(--radius-sm);
+    word-break: break-all;
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.empty-circle {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+}

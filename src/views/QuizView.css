@@ -1,0 +1,232 @@
+.quiz-view {
+    padding-bottom: 4rem;
+}
+
+.quiz-header {
+    margin-bottom: var(--space-5);
+}
+
+.quiz-header.top-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.quiz-titles {
+    flex: 1;
+    text-align: center;
+}
+
+.spacer-invisible {
+    width: 130px;
+}
+
+.back-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 130px;
+}
+
+.back-btn:hover {
+    background-color: var(--surface);
+    color: var(--text);
+}
+
+.quiz-header h2 {
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+}
+
+.question-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-1);
+}
+
+.question-card h3 {
+    font-size: 1.125rem;
+    margin-bottom: 1rem;
+}
+
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.option-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background-color: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    transition: all var(--dur-fast) var(--ease-standard);
+}
+
+.option-btn:hover:not(:disabled) {
+    background-color: var(--bg);
+    border-color: color-mix(in srgb, var(--border) 80%, var(--text));
+}
+
+.option-btn.selected {
+    border-color: var(--primary);
+    background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.option-btn.correct {
+    border-color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+}
+
+.option-btn.incorrect {
+    border-color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.option-marker {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg);
+    border-radius: var(--radius-sm);
+    margin-right: 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.option-btn.selected .option-marker {
+    background-color: var(--primary);
+    color: white;
+}
+
+.option-btn.correct .option-marker {
+    background-color: #10b981;
+    color: white;
+}
+
+.option-btn.incorrect .option-marker {
+    background-color: #ef4444;
+    color: white;
+}
+
+.result-icon {
+    margin-left: auto;
+}
+
+.correct-icon {
+    color: #10b981;
+}
+
+.incorrect-icon {
+    color: #ef4444;
+}
+
+.explanation {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.95rem;
+}
+
+.explanation.success {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+}
+
+.explanation.error {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.quiz-actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.submit-btn {
+    background-color: var(--primary);
+    color: white;
+    padding: 0.75rem 2rem;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    font-size: 1rem;
+    border: none;
+    cursor: pointer;
+}
+
+.submit-btn:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--primary) 85%, #000);
+}
+
+.submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.results-panel {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.5rem;
+    background-color: var(--bg);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+}
+
+.score-display {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.score-label {
+    font-size: 1.125rem;
+    color: var(--text-muted);
+}
+
+.score-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.restart-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    transition: all var(--dur-fast) var(--ease-standard);
+    cursor: pointer;
+}
+
+.restart-btn:hover {
+    background-color: color-mix(in srgb, var(--surface) 85%, var(--border));
+}
