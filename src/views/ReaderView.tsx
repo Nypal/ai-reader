@@ -399,6 +399,25 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
         stop();
     };
 
+    const handleSeek = (newIdx: number) => {
+        const wasPlaying = playbackState === 'playing' || playbackState === 'loading';
+        runIdRef.current += 1;
+        isStoppedRef.current = false;
+        abortRef.current?.abort();
+        abortRef.current = new AbortController();
+        setLastError(null);
+        setCurrentSentenceIdx(newIdx);
+
+        if (wasPlaying) {
+            playIndex(newIdx, runIdRef.current).catch(e => {
+                setPlaybackState("error");
+                const errName = e instanceof Error ? e.name : "Error";
+                const errMsg = e instanceof Error ? e.message : String(e);
+                setLastError(`seek play() rejected: ${errName} ${errMsg}`);
+            });
+        }
+    };
+
     const handleBack = () => {
         stop();
         onBack();
@@ -458,30 +477,50 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
             </div>
 
             <div className="reader-controls-wrapper">
-                <div className="speed-control">
-                    <select
-                        value={speed}
-                        onChange={(e) => setSpeed(Number(e.target.value))}
-                        className="speed-select"
-                    >
-                        <option value={0.75}>0.75x</option>
-                        <option value={1}>1.0x</option>
-                        <option value={1.25}>1.25x</option>
-                        <option value={1.5}>1.5x</option>
-                        <option value={2}>2.0x</option>
-                    </select>
+                <div className="progress-container">
+                    <input
+                        type="range"
+                        className="progress-slider"
+                        min={0}
+                        max={sentences.length > 0 ? sentences.length - 1 : 0}
+                        value={Math.max(0, currentSentenceIdx)}
+                        onChange={(e) => handleSeek(Number(e.target.value))}
+                        aria-valuemin={0}
+                        aria-valuemax={sentences.length > 0 ? sentences.length - 1 : 0}
+                        aria-valuenow={Math.max(0, currentSentenceIdx)}
+                        aria-label="Reading progress"
+                        disabled={sentences.length === 0}
+                    />
                 </div>
+                <div className="controls-row">
+                    <div className="speed-control">
+                        <select
+                            value={speed}
+                            onChange={(e) => setSpeed(Number(e.target.value))}
+                            className="speed-select"
+                        >
+                            <option value={0.75}>0.75x</option>
+                            <option value={1}>1.0x</option>
+                            <option value={1.25}>1.25x</option>
+                            <option value={1.5}>1.5x</option>
+                            <option value={2}>2.0x</option>
+                        </select>
+                    </div>
 
-                <div className="main-controls">
-                    <button className="control-btn secondary" onClick={resetPlay} disabled={(playbackState === 'idle' || playbackState === 'completed') && currentSentenceIdx === 0}>
-                        <Square size={24} />
-                    </button>
-                    <button className="control-btn primary" onClick={togglePlay} disabled={playbackState === 'loading'}>
-                        {playbackState === 'playing' ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" />}
-                    </button>
+                    <div className="main-controls">
+                        <button className="control-btn secondary" aria-label="Stop playback" onClick={resetPlay} disabled={(playbackState === 'idle' || playbackState === 'completed') && currentSentenceIdx <= 0}>
+                            <Square size={24} />
+                        </button>
+                        <button className="control-btn primary" aria-label={playbackState === 'playing' ? "Pause" : "Play"} onClick={togglePlay} disabled={playbackState === 'loading'}>
+                            <div className="play-pause-icon">
+                                <Pause size={32} fill="currentColor" className={`icon-state ${playbackState === 'playing' ? 'active' : ''}`} />
+                                <Play size={32} fill="currentColor" className={`icon-state ${playbackState !== 'playing' ? 'active' : ''}`} />
+                            </div>
+                        </button>
+                    </div>
+
+                    <div className="spacer"></div>
                 </div>
-
-                <div className="spacer"></div>
             </div>
         </div>
     );

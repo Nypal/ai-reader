@@ -21,18 +21,34 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 180ms ease-out forwards;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
 
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-container {
+    animation: fadeInReduced 180ms ease-out forwards;
+  }
+
+  @keyframes fadeInReduced {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
   }
 }
 
