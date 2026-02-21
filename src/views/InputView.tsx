@@ -261,37 +261,32 @@ export default function InputView({ onStart }: InputViewProps) {
     return (
         <div className="view-container input-view fade-in flex flex-col justify-center">
 
-            <div className="mode-selector-container">
-                <div
-                    className={`mode-card glass-panel ${mode === 'read' ? 'selected' : ''}`}
-                    onClick={() => handleModeSelect('read')}
-                >
-                    <div className="mode-icon-wrapper">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>
-                    </div>
-                    <div className="mode-content">
-                        <h3>Read Mode</h3>
-                        <p>Just listen and read. No quiz or tests. Pure focused reading experience.</p>
-                    </div>
-                </div>
-
-                <div
-                    className={`mode-card glass-panel ${mode === 'learn' ? 'selected' : ''}`}
-                    onClick={() => handleModeSelect('learn')}
-                >
-                    <div className="mode-icon-wrapper">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" /><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" /><path d="M17.599 6.5a3 3 0 0 0 .399-1.375" /></svg>
-                    </div>
-                    <div className="mode-content">
-                        <h3>Read and Learn Mode</h3>
-                        <p>Read, then test your understanding with a quiz and Feynman Test.</p>
-                    </div>
-                </div>
-            </div>
-
             <div className="input-box glass-panel flex flex-col relative w-full h-full">
                 <h2>What do you want to learn today?</h2>
                 <p>Paste text or drop a file to start listening and learning.</p>
+
+                <div className="mode-options-stack">
+                    <button
+                        className={`mode-option-row ${mode === 'read' ? 'selected' : ''}`}
+                        onClick={() => handleModeSelect('read')}
+                    >
+                        <div className="mode-row-content">
+                            <span className="mode-icon">📖</span>
+                            <span className="mode-text"><strong>Read Mode</strong> — Just listen and read</span>
+                        </div>
+                        <span className="mode-radio">{mode === 'read' ? '●' : '○'}</span>
+                    </button>
+                    <button
+                        className={`mode-option-row ${mode === 'learn' ? 'selected' : ''}`}
+                        onClick={() => handleModeSelect('learn')}
+                    >
+                        <div className="mode-row-content">
+                            <span className="mode-icon">🧠</span>
+                            <span className="mode-text"><strong>Read and Learn Mode</strong> — Full quiz and Feynman Test</span>
+                        </div>
+                        <span className="mode-radio">{mode === 'learn' ? '●' : '○'}</span>
+                    </button>
+                </div>
                 <div className="input-area-wrapper">
                     <textarea
                         className="main-textarea"
@@ -342,7 +337,7 @@ export default function InputView({ onStart }: InputViewProps) {
 
                     <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting}>
                         <Play size={20} fill="currentColor" />
-                        <span>Play & Learn</span>
+                        <span>{mode === 'read' ? 'Start' : 'Play & Learn'}</span>
                     </button>
                 </div>
             </div>

@@ -21,58 +21,66 @@
     font-size: 1.125rem;
 }
 
-.mode-selector-container {
-    display: flex;
-    gap: 1.5rem;
-    width: 100%;
-    max-width: 680px;
-    margin-bottom: 2rem;
-}
-
-.mode-card {
-    flex: 1;
+.mode-options-stack {
     display: flex;
     flex-direction: column;
+    gap: 8px;
+    margin-bottom: 1.5rem;
+    width: 100%;
+}
+
+.mode-option-row {
+    display: flex;
     align-items: center;
-    text-align: center;
-    padding: 1.5rem;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 1.25rem;
+    background-color: transparent;
+    border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    border: 2px solid transparent;
-    transition: all var(--dur-normal) var(--ease-standard);
+    transition: all var(--dur-fast) var(--ease-standard);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+}
+
+.mode-option-row:hover {
     background-color: color-mix(in srgb, var(--surface) 40%, transparent);
+    border-color: color-mix(in srgb, var(--border) 80%, transparent);
 }
 
-.mode-card:hover {
-    background-color: color-mix(in srgb, var(--surface) 60%, transparent);
-    transform: translateY(-2px);
-}
-
-.mode-card.selected {
+.mode-option-row.selected {
     border-color: var(--primary);
-    background-color: color-mix(in srgb, var(--primary) 10%, transparent);
-    box-shadow: 0 4px 20px color-mix(in srgb, var(--primary) 20%, transparent);
+    border-left: 4px solid var(--primary);
+    background-color: color-mix(in srgb, var(--primary) 5%, transparent);
 }
 
-.mode-icon-wrapper {
-    color: var(--text-muted);
-    margin-bottom: 1rem;
-    transition: color var(--dur-fast) var(--ease-standard);
+.mode-row-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
-.mode-card.selected .mode-icon-wrapper {
-    color: var(--primary);
+.mode-icon {
+    font-size: 1.25rem;
 }
 
-.mode-content h3 {
-    font-size: 1.1rem;
-    margin-bottom: 0.5rem;
+.mode-text {
+    text-align: left;
+}
+
+.mode-text strong {
     font-weight: 600;
 }
 
-.mode-content p {
-    font-size: 0.85rem;
+.mode-radio {
     color: var(--text-muted);
-    line-height: 1.4;
+    font-size: 1.25rem;
+}
+
+.mode-option-row.selected .mode-radio {
+    color: var(--primary);
 }
 
 .input-area-wrapper {
