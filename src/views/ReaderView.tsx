@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Square, ArrowLeft, Settings2, SkipBack } from 'lucide-react';
+import { Square, ArrowLeft, Settings2, SkipBack, Activity } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
+import { AuditService } from '../services/AuditService';
 import AudioVisualizer from '../components/AudioVisualizer';
 import './ReaderView.css';
 
@@ -56,6 +57,10 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
         return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'onyx';
     });
 
+    // Technical Audit State
+    const [ttsLatencyAvg, setTtsLatencyAvg] = useState(0);
+    const [isSlowBackend, setIsSlowBackend] = useState(false);
+
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const runIdRef = useRef(0);
     const isStoppedRef = useRef(true);
@@ -63,6 +68,12 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     const abortRef = useRef<AbortController | null>(null);
     const inFlightPlayRef = useRef<Promise<void> | null>(null);
     const voiceRef = useRef<TTSVoice>(voiceUI);
+
+    const sessionStartTimeRef = useRef<number>(Date.now());
+    const maxSpeedUsedRef = useRef<number>(speed);
+    const replayCountRef = useRef<number>(0);
+    const highestSentenceIdxRef = useRef<number>(0);
+    const hasLoggedSessionRef = useRef<boolean>(false);
 
     const cacheRef = useRef<Map<number, CacheItem>>(new Map());
     const sentenceRefs = useRef<(HTMLSpanElement | null)[]>([]);
@@ -177,6 +188,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     }, []);
 
     const fetchTts = useCallback(async (text: string, signal: AbortSignal): Promise<{ buf: ArrayBuffer; contentType: string }> => {
+        const fetchStartMs = nowMs();
         console.log(`[PlayLearn] fetching TTS for chunk: "${text}"`);
         const res = await fetch('http://localhost:3001/api/tts', {
             method: "POST",
@@ -200,8 +212,17 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
             throw new Error(`TTS returned too few bytes: ${buf.byteLength}`);
         }
 
+        const latency = nowMs() - fetchStartMs;
+        setTtsLatencyAvg(prev => {
+            const newAvg = prev === 0 ? latency : (prev * 0.7 + latency * 0.3);
+            if (newAvg > 3000 && !isSlowBackend) {
+                setIsSlowBackend(true);
+            }
+            return newAvg;
+        });
+
         return { buf: buf, contentType: assertAudioContentType(ct) };
-    }, []);
+    }, [isSlowBackend]);
 
     const ensurePrefetchWindow = useCallback(
         async (baseIdx: number, myRunId: number) => {
@@ -261,10 +282,20 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
         if (idx < 0 || idx >= sentences.length) {
             setPlaybackState("completed");
             setCurrentSentenceIdx(-1);
+            if (!hasLoggedSessionRef.current) {
+                hasLoggedSessionRef.current = true;
+                AuditService.logSession({
+                    durationSeconds: Math.max(1, Math.round((Date.now() - sessionStartTimeRef.current) / 1000)),
+                    sentencesRead: highestSentenceIdxRef.current + 1,
+                    maxSpeedUsed: maxSpeedUsedRef.current,
+                    replayCount: replayCountRef.current
+                });
+            }
             onFinish();
             return;
         }
 
+        if (idx > highestSentenceIdxRef.current) highestSentenceIdxRef.current = idx;
         setPlaybackState("loading");
         const t0 = nowMs();
 
@@ -335,6 +366,15 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
 
                 setPlaybackState("completed");
                 setCurrentSentenceIdx(-1);
+                if (!hasLoggedSessionRef.current) {
+                    hasLoggedSessionRef.current = true;
+                    AuditService.logSession({
+                        durationSeconds: Math.max(1, Math.round((Date.now() - sessionStartTimeRef.current) / 1000)),
+                        sentencesRead: highestSentenceIdxRef.current + 1,
+                        maxSpeedUsed: maxSpeedUsedRef.current,
+                        replayCount: replayCountRef.current
+                    });
+                }
                 onFinish();
                 return;
             }
@@ -365,6 +405,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     }, [fetchTts, ensurePrefetchWindow, speed, onFinish, sentences, sentencesSpoken]);
 
     useEffect(() => {
+        if (speed > maxSpeedUsedRef.current) maxSpeedUsedRef.current = speed;
         if (audioRef.current) {
             audioRef.current.playbackRate = speed;
         }
@@ -435,6 +476,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     };
 
     const handleSeek = (newIdx: number) => {
+        replayCountRef.current += 1;
         const wasPlaying = playbackState === 'playing' || playbackState === 'loading';
         runIdRef.current += 1;
         isStoppedRef.current = false;
@@ -492,6 +534,11 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
                     <span>Back to Start</span>
                 </button>
                 <div className="header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {isSlowBackend && (
+                        <div className="slow-backend-warning glass-panel" style={{ color: 'var(--warning)', fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid rgba(234, 179, 8, 0.2)' }} title={`High Latency Detected (~${Math.round(ttsLatencyAvg)}ms)`}>
+                            <Activity size={12} /> <span className="hide-mobile">Slow Connection</span>
+                        </div>
+                    )}
                     <div className="speed-control">
                         <select
                             value={speed}

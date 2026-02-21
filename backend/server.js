@@ -102,6 +102,7 @@ You MUST return the output ONLY as valid JSON in this exact structure:
     {
       "paragraphNumber": 1,
       "paragraphText": "...",
+      "concept": "...",
       "type": "Comprehension",
       "question": "...",
       "options": ["...", "...", "...", "..."],
@@ -173,7 +174,7 @@ ${userExplanation}
 Evaluate how accurately and completely the student explained the main ideas of the original text. Maintain an encouraging, coaching tone. DO NOT judge. 
 You MUST return the output ONLY as valid JSON in this exact structure, using these EXACT keys:
 {
-    "score": 85,
+    "overallScore": 85,
     "strongPoints": "List specific things the student explained correctly.",
     "whatToAdd": "List specific concepts they missed that they should add next time.",
     "sentenceToImprove": "Provide one concrete example sentence the student could use to improve their explanation."

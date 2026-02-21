@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, RotateCcw, ArrowRight, ArrowLeft, Loader, Brain, AlertCircle, MessageSquare } from 'lucide-react';
+import { AuditService } from '../services/AuditService';
 import './QuizView.css';
 
 interface QuizViewProps {
@@ -10,6 +11,7 @@ interface QuizViewProps {
 interface Question {
     paragraphNumber: number;
     paragraphText: string;
+    concept: string;
     type: string;
     question: string;
     options: string[];
@@ -83,6 +85,11 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
         } else {
             setIncorrectQuestions(prev => [...prev, quizData.questions[currentIdx]]);
         }
+
+        const concept = quizData.questions[currentIdx].concept;
+        if (concept) {
+            AuditService.logQuizResult(concept, isCorrect);
+        }
     };
 
     const handleNext = () => {
@@ -132,8 +139,11 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
             const data: Record<string, string | number> = await res.json();
 
             // Fallback mapping in case of stale backend JSON structure
+            const finalScore = Number(data.overallScore || data.score) || 0;
+            AuditService.logFeynmanResult(finalScore);
+
             setFeynmanFeedback({
-                score: Number(data.score) || 0,
+                score: finalScore,
                 strongPoints: String(data.strongPoints || data.accuracyFeedback || "Good attempt."),
                 whatToAdd: String(data.whatToAdd || data.missingConcepts || "Continue to refine your points."),
                 sentenceToImprove: String(data.sentenceToImprove || data.oneThingToAdd || "Review your concepts for clarity.")
@@ -177,6 +187,8 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
 
     if (isComplete) {
         const percentage = Math.round((score / quizData.questions.length) * 100);
+        const strugglingConcepts = AuditService.getStrugglingConcepts(3);
+
         let encouragement = "Great job!";
         if (percentage === 100) encouragement = "Perfect! You deeply understand the material!";
         else if (percentage >= 80) encouragement = "Excellent comprehension!";
@@ -209,6 +221,22 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
                                 ))}
                             </ul>
                         </div>
+
+                        {strugglingConcepts.length > 0 && (
+                            <div className="review-section">
+                                <h3><AlertCircle size={20} /> Concepts Needing Review</h3>
+                                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                                    You have struggled with these concepts multiple times across previous sessions. Consider dedicating specific focus to them:
+                                </p>
+                                <ul className="review-list">
+                                    {strugglingConcepts.map((concept, i) => (
+                                        <li key={i} className="review-item" style={{ borderLeftColor: 'var(--error)' }}>
+                                            <div className="review-context"><strong>{concept}</strong></div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
 
                         {incorrectQuestions.length > 0 && (
                             <div className="review-section">
