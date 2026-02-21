@@ -123,6 +123,36 @@
     font-family: inherit;
     font-size: 1.125rem;
     line-height: 1.6;
+    position: relative;
+    z-index: 2;
+}
+
+.empty-state-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    pointer-events: none;
+    z-index: 1;
+    text-align: center;
+    opacity: 0.6;
+}
+
+.empty-state-overlay p {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+}
+
+.top-right-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1.5rem;
+    z-index: 10;
 }
 
 .main-textarea:focus {
@@ -269,7 +299,7 @@
     justify-content: center;
     min-height: 48px;
     gap: 0.5rem;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--primary);
     color: white;
     padding: 0.75rem 2rem;
     border-radius: var(--radius-full);

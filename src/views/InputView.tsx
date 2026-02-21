@@ -262,6 +262,11 @@ export default function InputView({ onStart }: InputViewProps) {
         <div className="view-container input-view fade-in flex flex-col justify-center">
 
             <div className="input-box glass-panel flex flex-col relative w-full h-full">
+                <div className="top-right-actions">
+                    <button className="icon-btn diagnostics-btn" onClick={runSystemCheck} title="Run System Check" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px', padding: 0, color: 'var(--text-muted)' }}>
+                        <Activity size={18} />
+                    </button>
+                </div>
                 <h2>What do you want to learn today?</h2>
                 <p>Paste text or drop a file to start listening and learning.</p>
 
@@ -288,6 +293,12 @@ export default function InputView({ onStart }: InputViewProps) {
                     </div>
                 </div>
                 <div className="input-area-wrapper">
+                    {!text && !isExtracting && (
+                        <div className="empty-state-overlay">
+                            <Upload size={32} opacity={0.5} />
+                            <p>Paste text or drop a file here</p>
+                        </div>
+                    )}
                     <textarea
                         className="main-textarea"
                         placeholder={isExtracting ? "Extracting text... Please wait." : "Paste your text here..."}
@@ -327,11 +338,6 @@ export default function InputView({ onStart }: InputViewProps) {
                         <button className="icon-btn" title="Upload File" onClick={() => fileInputRef.current?.click()} disabled={isExtracting}>
                             <Upload size={20} />
                             <span className="hide-mobile">Upload File</span>
-                        </button>
-
-                        <button className="icon-btn diagnostics-btn" onClick={runSystemCheck} title="Run System Check">
-                            <Activity size={20} />
-                            <span className="hide-mobile">System Check</span>
                         </button>
                     </div>
 
