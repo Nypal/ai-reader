@@ -126,8 +126,8 @@
     overflow: hidden;
     position: relative;
     transition: border-color var(--dur-fast) var(--ease-standard);
-    height: 160px;
-    min-height: 160px;
+    height: 220px;
+    min-height: 220px;
 }
 
 .input-area-wrapper:focus-within {
