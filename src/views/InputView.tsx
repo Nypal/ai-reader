@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Play, Upload, Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Play, Upload, Activity, CheckCircle2, XCircle, Loader2, Volume2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 // Setting up the worker for pdf.js in Vite
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
@@ -13,6 +13,17 @@ interface InputViewProps {
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
+
+const TTS_VOICES = [
+    { id: 'onyx', name: 'Onyx', desc: '👨 Deep authoritative male' },
+    { id: 'echo', name: 'Echo', desc: '👨 Calm clear male' },
+    { id: 'fable', name: 'Fable', desc: '👨 Warm storytelling male' },
+    { id: 'nova', name: 'Nova', desc: '👩 Clear friendly female' },
+    { id: 'shimmer', name: 'Shimmer', desc: '👩 Soft gentle female' },
+    { id: 'alloy', name: 'Alloy', desc: '🧑 Neutral balanced' }
+] as const;
+
+type TTSVoice = typeof TTS_VOICES[number]['id'];
 
 interface SystemTestState {
     backend: { status: TestStatus; error?: string; fix?: string };
@@ -39,7 +50,60 @@ export default function InputView({ onStart }: InputViewProps) {
     const [testState, setTestState] = useState<SystemTestState>(initialTestState);
     const [showTests, setShowTests] = useState(false);
 
+    const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() => {
+        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'onyx';
+    });
+    const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+    const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
     const handlePlay = () => onStart(text);
+
+    const handleVoiceSelect = (voiceId: TTSVoice) => {
+        setSelectedVoice(voiceId);
+        localStorage.setItem('playlearn_voice', voiceId);
+    };
+
+    const handlePreview = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (previewingVoice === selectedVoice) return;
+
+        try {
+            setPreviewingVoice(selectedVoice);
+            if (previewAudioRef.current) {
+                previewAudioRef.current.pause();
+                previewAudioRef.current.removeAttribute("src");
+            }
+
+            const textToSpeak = `Hi, I am ${selectedVoice}. This is my voice.`;
+            const res = await fetch('http://localhost:3001/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: textToSpeak, voice: selectedVoice, format: 'mp3' })
+            });
+
+            if (!res.ok) throw new Error('Preview failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+
+            const audio = new Audio(url);
+            previewAudioRef.current = audio;
+
+            audio.onended = () => {
+                setPreviewingVoice(null);
+                URL.revokeObjectURL(url);
+            };
+            audio.onerror = () => {
+                setPreviewingVoice(null);
+                URL.revokeObjectURL(url);
+            };
+
+            await audio.play();
+
+        } catch (err) {
+            console.error("Preview error", err);
+            setPreviewingVoice(null);
+        }
+    };
 
     const runSystemCheck = async () => {
         setShowTests(true);
@@ -199,6 +263,30 @@ export default function InputView({ onStart }: InputViewProps) {
                     onChange={(e) => setText(e.target.value)}
                     disabled={isExtracting}
                 />
+
+                <div className="voice-selector-row">
+                    <span className="voice-label">Voice:</span>
+                    <div className="voice-pills">
+                        {TTS_VOICES.map(v => (
+                            <button
+                                key={v.id}
+                                className={`voice-pill ${selectedVoice === v.id ? 'active' : ''}`}
+                                onClick={() => handleVoiceSelect(v.id)}
+                                title={v.desc}
+                            >
+                                {v.name}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        className="preview-btn icon-btn"
+                        onClick={handlePreview}
+                        title={`Preview ${TTS_VOICES.find(v => v.id === selectedVoice)?.name} voice`}
+                        disabled={previewingVoice !== null}
+                    >
+                        {previewingVoice !== null ? <Loader2 size={16} className="spin-icon text-primary" /> : <Volume2 size={16} />}
+                    </button>
+                </div>
 
                 <div className="input-actions">
                     <div className="left-actions">

@@ -1,10 +1,13 @@
 .app-header {
     border-bottom: 1px solid var(--border);
-    background-color: var(--surface);
+    background-color: color-mix(in srgb, var(--surface) 70%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     position: sticky;
     top: 0;
     z-index: 100;
     padding: 1rem 0;
+    transition: background-color var(--dur-med) var(--ease-standard), border-color var(--dur-med) var(--ease-standard);
 }
 
 .header-container {
@@ -29,24 +32,40 @@
     letter-spacing: -0.025em;
 }
 
-.theme-toggle {
+.theme-segmented-control {
+    display: flex;
+    align-items: center;
+    background-color: var(--border);
+    border-radius: var(--radius-full);
+    padding: 2px;
+    gap: 2px;
+}
+
+.theme-pill {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: var(--radius-full);
     color: var(--text-muted);
-    background-color: var(--bg);
+    background: transparent;
+    border: none;
+    cursor: pointer;
     transition: all var(--dur-fast) var(--ease-standard);
 }
 
-.theme-toggle:focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
+.theme-pill:hover {
+    color: var(--text);
 }
 
-.theme-toggle:hover {
-    background-color: color-mix(in srgb, var(--text-muted) 15%, transparent);
+.theme-pill.active {
+    background-color: var(--bg);
     color: var(--text);
+    box-shadow: var(--shadow-1);
+}
+
+.theme-pill:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
 }

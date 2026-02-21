@@ -1,115 +1,434 @@
-import { useState } from 'react';
-import { CheckCircle2, XCircle, RotateCcw, ArrowLeft } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { CheckCircle2, XCircle, RotateCcw, ArrowRight, ArrowLeft, Loader, Brain, AlertCircle, MessageSquare } from 'lucide-react';
 import './QuizView.css';
 
 interface QuizViewProps {
-    content: string; // The original text (used later for AI generation)
+    content: string;
     onRestart: () => void;
 }
 
-// Mock questions for MVP
-const MOCK_QUESTIONS = [
-    {
-        id: 1,
-        question: "What is the main topic of the text?",
-        options: ["Artificial Intelligence", "Web Development", "Data Science", "Cybersecurity"],
-        answer: 0,
-        explanation: "The text discusses AI-powered tools."
-    },
-    {
-        id: 2,
-        question: "Which feature is critical for the application?",
-        options: ["Social sharing", "Neural Text-to-Speech", "Blockchain integration", "3D graphics"],
-        answer: 1,
-        explanation: "Neural TTS ensures human-like reading quality."
+interface Question {
+    paragraphNumber: number;
+    paragraphText: string;
+    type: string;
+    question: string;
+    options: string[];
+    correctAnswerIndex: number;
+    explanation: string;
+}
+
+interface QuizData {
+    questions: Question[];
+    summary: string[];
+}
+
+interface FeynmanFeedback {
+    score: number;
+    strongPoints: string;
+    whatToAdd: string;
+    sentenceToImprove: string;
+}
+
+export default function QuizView({ content, onRestart }: QuizViewProps) {
+    const [quizData, setQuizData] = useState<QuizData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [currentIdx, setCurrentIdx] = useState(0);
+    const [selectedOption, setSelectedOption] = useState<number | null>(null);
+    const [score, setScore] = useState(0);
+    const [incorrectQuestions, setIncorrectQuestions] = useState<Question[]>([]);
+    const [isComplete, setIsComplete] = useState(false);
+    const [isOptionsRevealed, setIsOptionsRevealed] = useState(false);
+
+    // Feynman test state
+    const [feynmanStep, setFeynmanStep] = useState<'prepare' | 'write' | 'feedback'>('prepare');
+    const [feynmanText, setFeynmanText] = useState('');
+    const [feynmanFeedback, setFeynmanFeedback] = useState<FeynmanFeedback | null>(null);
+    const [isFeynmanLoading, setIsFeynmanLoading] = useState(false);
+    const [feynmanError, setFeynmanError] = useState('');
+
+    useEffect(() => {
+        const fetchQuiz = async () => {
+            try {
+                const res = await fetch('http://localhost:3001/api/quiz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: content })
+                });
+
+                if (!res.ok) {
+                    throw new Error('Failed to generate quiz.');
+                }
+
+                const data: QuizData = await res.json();
+                setQuizData(data);
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : 'An error occurred.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchQuiz();
+    }, [content]);
+
+    const handleSelect = (idx: number) => {
+        if (selectedOption !== null || !quizData) return;
+
+        setSelectedOption(idx);
+
+        const isCorrect = idx === quizData.questions[currentIdx].correctAnswerIndex;
+        if (isCorrect) {
+            setScore(s => s + 1);
+        } else {
+            setIncorrectQuestions(prev => [...prev, quizData.questions[currentIdx]]);
+        }
+    };
+
+    const handleNext = () => {
+        if (!quizData) return;
+
+        if (currentIdx < quizData.questions.length - 1) {
+            setCurrentIdx(prev => prev + 1);
+            setSelectedOption(null);
+            setIsOptionsRevealed(false);
+        } else {
+            setIsComplete(true);
+        }
+    };
+
+    const handleFeynmanSubmit = async () => {
+        if (!feynmanText.trim()) return;
+        setFeynmanError('');
+
+        const currentWordCount = feynmanText.trim().split(/\s+/).filter(w => w.length > 0).length;
+        if (currentWordCount < 50) {
+            setFeynmanError("Please write at least 50 words before evaluating.");
+            return;
+        }
+
+        // Plagiarism Detection
+        if (quizData && quizData.summary) {
+            const isPlagiarized = quizData.summary.some(summaryPoint => {
+                const cleanPoint = summaryPoint.replace(/[^\w\s]/gi, '').trim().toLowerCase();
+                const cleanInput = feynmanText.replace(/[^\w\s]/gi, '').toLowerCase();
+                return cleanPoint.length > 10 && cleanInput.includes(cleanPoint);
+            });
+
+            if (isPlagiarized) {
+                setFeynmanError("Try explaining this in your own words, not the words from the summary. Pretend you are explaining it to a friend who has never read this.");
+                return;
+            }
+        }
+
+        setIsFeynmanLoading(true);
+        try {
+            const res = await fetch('http://localhost:3001/api/feynman', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ originalText: content, userExplanation: feynmanText })
+            });
+            if (!res.ok) throw new Error('Failed to evaluate explanation.');
+            const data: Record<string, string | number> = await res.json();
+
+            // Fallback mapping in case of stale backend JSON structure
+            setFeynmanFeedback({
+                score: Number(data.score) || 0,
+                strongPoints: String(data.strongPoints || data.accuracyFeedback || "Good attempt."),
+                whatToAdd: String(data.whatToAdd || data.missingConcepts || "Continue to refine your points."),
+                sentenceToImprove: String(data.sentenceToImprove || data.oneThingToAdd || "Review your concepts for clarity.")
+            });
+            setFeynmanStep('feedback');
+        } catch (err) {
+            console.error('Feynman evaluation failed:', err);
+            setFeynmanError('Evaluation failed. Please check backend connection.');
+        } finally {
+            setIsFeynmanLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="view-container quiz-view center-content">
+                <Loader className="spinner" size={48} />
+                <h2>Analyzing Text via AI...</h2>
+                <p>Generating personalized learning questions based on your reading.</p>
+            </div>
+        );
     }
-];
 
-export default function QuizView({ onRestart }: QuizViewProps) {
-    const [answers, setAnswers] = useState<Record<number, number>>({});
+    if (error || !quizData) {
+        return (
+            <div className="view-container quiz-view center-content">
+                <XCircle size={48} color="var(--error)" />
+                <h2>Quiz Generation Failed</h2>
+                <p>{error}</p>
+                <button className="primary-btn" onClick={onRestart}>Try Again</button>
+            </div>
+        );
+    }
 
-    const handleSelect = (qId: number, optIndex: number) => {
-        if (answers[qId] !== undefined) return; // Prevent changing answer
-        setAnswers(prev => ({ ...prev, [qId]: optIndex }));
-    };
+    const wordCount = feynmanText.trim().split(/\s+/).filter(w => w.length > 0).length;
+    let wordCountMessage = "";
+    if (wordCount === 0) wordCountMessage = "0 words";
+    else if (wordCount < 100) wordCountMessage = `${wordCount} words - Keep going...`;
+    else if (wordCount <= 200) wordCountMessage = `${wordCount} words - Good depth`;
+    else wordCountMessage = `${wordCount} words - Excellent`;
 
-    const calculateScore = () => {
-        let score = 0;
-        MOCK_QUESTIONS.forEach(q => {
-            if (answers[q.id] === q.answer) score++;
-        });
-        return Math.round((score / MOCK_QUESTIONS.length) * 100);
-    };
+    if (isComplete) {
+        const percentage = Math.round((score / quizData.questions.length) * 100);
+        let encouragement = "Great job!";
+        if (percentage === 100) encouragement = "Perfect! You deeply understand the material!";
+        else if (percentage >= 80) encouragement = "Excellent comprehension!";
+        else if (percentage >= 60) encouragement = "Good effort, you grasped the main concepts.";
+        else encouragement = "Keep practicing to improve your understanding.";
+
+        return (
+            <div className="view-container quiz-view">
+                <div className="quiz-header">
+                    <button className="back-btn" onClick={onRestart}>
+                        <ArrowLeft size={20} />
+                        <span>Back to Start</span>
+                    </button>
+                </div>
+                <div className="results-dashboard glass-panel fade-in">
+                    <div className="score-hero">
+                        <div className="score-circle">
+                            <span>{percentage}%</span>
+                        </div>
+                        <h2>{encouragement}</h2>
+                        <p>You answered {score} out of {quizData.questions.length} questions correctly.</p>
+                    </div>
+
+                    <div className="dashboard-grid">
+                        <div className="summary-section">
+                            <h3><Brain size={20} /> What You Learned Today</h3>
+                            <ul className="learning-summary">
+                                {quizData.summary.map((point, i) => (
+                                    <li key={i}><CheckCircle2 size={16} className="success-icon" /> <span>{point}</span></li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {incorrectQuestions.length > 0 && (
+                            <div className="review-section">
+                                <h3><AlertCircle size={20} /> Concepts to Review Tomorrow</h3>
+                                <ul className="review-list">
+                                    {incorrectQuestions.map((q, i) => (
+                                        <li key={i} className="review-item">
+                                            <div className="review-context">From Paragraph {q.paragraphNumber}:</div>
+                                            <div className="review-explanation">{q.explanation}</div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="feynman-section glass-panel">
+                        <div className="feynman-header">
+                            <MessageSquare size={24} />
+                            <h3>The Feynman Test</h3>
+                        </div>
+
+                        {feynmanStep === 'prepare' && (
+                            <div className="feynman-prepare fade-in">
+                                <p className="feynman-desc">Before you write, remember these key ideas:</p>
+                                <div className="feynman-key-concepts">
+                                    {quizData.summary.map((point, i) => (
+                                        <div key={i} className="feynman-concept-card">{point}</div>
+                                    ))}
+                                </div>
+                                <button className="primary-btn" onClick={() => setFeynmanStep('write')}>Start Writing</button>
+                            </div>
+                        )}
+
+                        {feynmanStep === 'write' && (
+                            <div className="feynman-write fade-in">
+                                <p className="feynman-desc">Explain the core ideas of the text in your own words below.</p>
+
+                                {feynmanError && (
+                                    <div className="feynman-plagiarism-warning fade-in">
+                                        <AlertCircle size={18} />
+                                        <span>{feynmanError}</span>
+                                    </div>
+                                )}
+
+                                <div className="feynman-input-wrapper">
+                                    <textarea
+                                        className="feynman-textarea"
+                                        placeholder="What is the main idea?&#10;Why does it matter?&#10;Give one real life example."
+                                        value={feynmanText}
+                                        onChange={(e) => setFeynmanText(e.target.value)}
+                                        disabled={isFeynmanLoading}
+                                    />
+                                    <div className="feynman-word-count">
+                                        {wordCountMessage}
+                                    </div>
+                                </div>
+                                <button
+                                    className="primary-btn feynman-submit"
+                                    onClick={handleFeynmanSubmit}
+                                    disabled={wordCount === 0 || isFeynmanLoading}
+                                >
+                                    {isFeynmanLoading ? <Loader className="spinner" size={20} /> : 'Evaluate My Understanding'}
+                                </button>
+                            </div>
+                        )}
+
+                        {feynmanStep === 'feedback' && feynmanFeedback && (
+                            <div className="feynman-feedback-container fade-in">
+                                {feynmanError && (
+                                    <div className="feynman-plagiarism-warning feynman-warning-margin fade-in">
+                                        <AlertCircle size={18} />
+                                        <span>{feynmanError}</span>
+                                    </div>
+                                )}
+                                <div className="feynman-feedback-split">
+                                    <div className="feynman-write-side">
+                                        <div className="feynman-input-wrapper">
+                                            <textarea
+                                                className="feynman-textarea feynman-textarea-sm"
+                                                value={feynmanText}
+                                                onChange={(e) => setFeynmanText(e.target.value)}
+                                                placeholder="Rewrite your explanation..."
+                                            />
+                                            <div className="feynman-word-count">
+                                                {wordCountMessage}
+                                            </div>
+                                        </div>
+                                        <div className="feynman-action-buttons">
+                                            <button
+                                                className="secondary-btn feynman-retry"
+                                                onClick={() => {
+                                                    setFeynmanText('');
+                                                    setFeynmanFeedback(null);
+                                                    setFeynmanStep('write');
+                                                }}
+                                            >
+                                                <RotateCcw size={16} /> Try Again
+                                            </button>
+                                            <button
+                                                className="primary-btn feynman-submit"
+                                                onClick={handleFeynmanSubmit}
+                                                disabled={wordCount === 0 || isFeynmanLoading}
+                                            >
+                                                {isFeynmanLoading ? <Loader className="spinner" size={20} /> : 'Re-Evaluate'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="feynman-evaluation">
+                                        <div className="feynman-feedback-text">
+                                            <div className="feedback-block accuracy-block">
+                                                <h4><CheckCircle2 size={16} /> Strong points</h4>
+                                                <p>{feynmanFeedback.strongPoints}</p>
+                                            </div>
+                                            <div className="feedback-block missing-block">
+                                                <h4><AlertCircle size={16} /> Here is what to add next time</h4>
+                                                <p>{feynmanFeedback.whatToAdd}</p>
+                                            </div>
+                                            <div className="feedback-block improve-block">
+                                                <h4><MessageSquare size={16} /> Try rewriting this sentence</h4>
+                                                <p>{feynmanFeedback.sentenceToImprove}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <button className="secondary-btn restart-btn" onClick={onRestart}>
+                        <RotateCcw size={20} />
+                        <span>Read Another Document</span>
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    const currentQ = quizData.questions[currentIdx];
+    const hasAnswered = selectedOption !== null;
 
     return (
-        <div className="view-container quiz-view">
-            <div className="quiz-header top-header">
+        <div className="view-container quiz-view fullscreen-quiz">
+            <div className="quiz-header">
                 <button className="back-btn" onClick={onRestart}>
                     <ArrowLeft size={20} />
                     <span>Back to Start</span>
                 </button>
-                <div className="quiz-titles">
-                    <h2>Quick Knowledge Check</h2>
-                    <p>Let's see how much you remembered.</p>
-                </div>
-                <div className="spacer-invisible"></div>
+            </div>
+            <div className="quiz-progress-bar">
+                <div
+                    className="quiz-progress-fill"
+                    style={{ width: `${((currentIdx) / quizData.questions.length) * 100}%` }}
+                ></div>
             </div>
 
-            <div className="quiz-content">
-                {MOCK_QUESTIONS.map((q, i) => (
-                    <div key={q.id} className="question-card">
-                        <h3>{i + 1}. {q.question}</h3>
-                        <div className="options-list">
-                            {q.options.map((opt, optIdx) => {
-                                const isSelected = answers[q.id] === optIdx;
-                                const isCorrect = q.answer === optIdx;
-                                const hasAnswered = answers[q.id] !== undefined;
+            <div className="quiz-main fade-in" key={currentIdx}>
+                <div className="context-panel glass-panel">
+                    <div className="context-label">Context (Paragraph {currentQ.paragraphNumber})</div>
+                    <p className="context-text">"{currentQ.paragraphText}"</p>
+                </div>
 
-                                let optionClass = "option-btn ";
-                                if (isSelected) optionClass += "selected ";
+                <div className="question-area">
+                    <span className="question-type-badge">{currentQ.type} Question</span>
+                    <h2 className="main-question">{currentQ.question}</h2>
+
+                    {!isOptionsRevealed ? (
+                        <div className="active-recall-overlay glass-panel fade-in">
+                            <Brain size={48} className="recall-icon" />
+                            <h3>Active Recall Challenge</h3>
+                            <p>What do you remember about this? Force your brain to retrieve the concept before seeing the answers.</p>
+                            <button className="primary-btn reveal-btn" onClick={() => setIsOptionsRevealed(true)}>
+                                Reveal Options
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="options-grid fade-in">
+                            {currentQ.options.map((opt, optIdx) => {
+                                const isSelected = selectedOption === optIdx;
+                                const isCorrectAnswer = currentQ.correctAnswerIndex === optIdx;
+
+                                let optionClass = "quiz-option-btn glass-panel ";
                                 if (hasAnswered) {
-                                    if (isCorrect) optionClass += "correct ";
-                                    else if (isSelected && !isCorrect) optionClass += "incorrect ";
+                                    if (isCorrectAnswer) optionClass += "correct-answer ";
+                                    else if (isSelected) optionClass += "wrong-answer ";
+                                    else optionClass += "dimmed ";
                                 }
 
                                 return (
                                     <button
                                         key={optIdx}
                                         className={optionClass}
-                                        onClick={() => handleSelect(q.id, optIdx)}
+                                        onClick={() => handleSelect(optIdx)}
                                         disabled={hasAnswered}
                                     >
-                                        <div className="option-marker">
-                                            {String.fromCharCode(65 + optIdx)}
-                                        </div>
-                                        <span>{opt}</span>
-
-                                        {hasAnswered && isCorrect && <CheckCircle2 className="result-icon correct-icon" size={20} />}
-                                        {hasAnswered && isSelected && !isCorrect && <XCircle className="result-icon incorrect-icon" size={20} />}
+                                        <div className="option-marker">{String.fromCharCode(65 + optIdx)}</div>
+                                        <div className="option-text">{opt}</div>
+                                        {hasAnswered && isCorrectAnswer && <CheckCircle2 className="feedback-icon" size={20} />}
+                                        {hasAnswered && isSelected && !isCorrectAnswer && <XCircle className="feedback-icon" size={20} />}
                                     </button>
                                 );
                             })}
                         </div>
+                    )}
+                </div>
 
-                        {answers[q.id] !== undefined && (
-                            <div className={`explanation ${answers[q.id] === q.answer ? 'success' : 'error'}`}>
-                                <strong>Explanation: </strong> {q.explanation}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            <div className="quiz-actions">
-                {Object.keys(answers).length === MOCK_QUESTIONS.length && (
-                    <div className="results-panel">
-                        <div className="score-display">
-                            <span className="score-label">Your Score:</span>
-                            <span className="score-value">{calculateScore()}%</span>
+                {hasAnswered && (
+                    <div className={`feedback-panel glass-panel fade-in ${selectedOption === currentQ.correctAnswerIndex ? 'success-feedback' : 'error-feedback'}`}>
+                        <div className="feedback-header">
+                            {selectedOption === currentQ.correctAnswerIndex ? (
+                                <><CheckCircle2 size={24} /> <h3>Correct</h3></>
+                            ) : (
+                                <><XCircle size={24} /> <h3>Incorrect</h3></>
+                            )}
                         </div>
-                        <button className="secondary-btn restart-btn" onClick={onRestart}>
-                            <RotateCcw size={20} />
-                            <span>Learn Something New</span>
+                        <p>{currentQ.explanation}</p>
+                        <button className="primary-btn next-q-btn" onClick={handleNext}>
+                            <span>{currentIdx === quizData.questions.length - 1 ? 'See Results' : 'Next Question'}</span>
+                            <ArrowRight size={20} />
                         </button>
                     </div>
                 )}

@@ -4,11 +4,12 @@ import './AudioVisualizer.css';
 interface AudioVisualizerProps {
     audioElement: HTMLAudioElement | null;
     isPlaying: boolean;
+    onClick?: () => void;
 }
 
 const NUM_BARS = 5;
 
-export default function AudioVisualizer({ audioElement, isPlaying }: AudioVisualizerProps) {
+export default function AudioVisualizer({ audioElement, isPlaying, onClick }: AudioVisualizerProps) {
     const [barHeights, setBarHeights] = useState<number[]>(new Array(NUM_BARS).fill(20));
 
     // Store web audio contexts safely to prevent memory leaks across re-renders
@@ -105,7 +106,19 @@ export default function AudioVisualizer({ audioElement, isPlaying }: AudioVisual
     }, [isPlaying]);
 
     return (
-        <div className={`audio-visualizer ${isPlaying ? 'playing' : ''}`} aria-hidden="true">
+        <div
+            className={`audio-visualizer ${isPlaying ? 'playing' : ''} ${onClick ? 'interactive' : ''}`}
+            aria-hidden="true"
+            onClick={onClick}
+            role={onClick ? "button" : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            onKeyDown={(e) => {
+                if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onClick();
+                }
+            }}
+        >
             {barHeights.map((height, i) => (
                 <div
                     key={i}
