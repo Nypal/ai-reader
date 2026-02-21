@@ -18,8 +18,15 @@ export function useSentenceSplitter(text: string): { original: string[]; spoken:
         return key;
     });
 
-    const sentencesProtected = protectedText.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [];
-    const trimmedProtected = sentencesProtected.map(s => s.trim()).filter(s => s.length > 0);
+    // Preprocess: Ensure bullet points act as sentence boundaries
+    // Match -, *, or • at the start of a line or preceded by spaces/newlines
+    const blockText = protectedText.replace(/(^|\n)\s*[-*•]\s+/g, '$1. ');
+
+    // Split by standard punctuation
+    const sentencesProtected = blockText.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [];
+    const trimmedProtected = sentencesProtected
+        .map(s => s.trim().replace(/^\.\s*/, '')) // Remove the artifact '.' we added for bullets
+        .filter(s => s.length > 0);
 
     const restore = (s: string, mode: "original" | "spoken") => {
         let out = s;
