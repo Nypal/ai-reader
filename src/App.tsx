@@ -11,15 +11,22 @@ export type AppState = 'input' | 'reading' | 'quiz';
 function App() {
   const [appState, setAppState] = useState<AppState>('input');
   const [content, setContent] = useState<string>('');
+  const [readingMode, setReadingMode] = useState<'read' | 'learn'>('learn');
 
-  const handleStartReading = (text: string) => {
+  const handleStartReading = (text: string, mode: 'read' | 'learn') => {
     if (!text.trim()) return;
     setContent(text);
+    setReadingMode(mode);
     setAppState('reading');
   };
 
   const handleFinishReading = () => {
-    setAppState('quiz');
+    if (readingMode === 'read') {
+      setContent('');
+      setAppState('input');
+    } else {
+      setAppState('quiz');
+    }
   };
 
   const handleRestart = () => {
