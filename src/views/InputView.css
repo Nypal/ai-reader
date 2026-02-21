@@ -21,66 +21,77 @@
     font-size: 1.125rem;
 }
 
-.mode-options-stack {
+.mode-segmented-control-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 1.5rem;
+    align-items: center;
+    margin-bottom: 24px;
     width: 100%;
 }
 
-.mode-option-row {
+.mode-segmented-control {
+    position: relative;
+    display: flex;
+    width: 100%;
+    max-width: 320px;
+    height: 52px;
+    background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    border-radius: 100px;
+    padding: 4px;
+    box-sizing: border-box;
+}
+
+.mode-slider {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    height: calc(100% - 8px);
+    width: calc(50% - 4px);
+    background-color: var(--primary);
+    border-radius: 100px;
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent);
+    z-index: 1;
+}
+
+.mode-learn .mode-slider {
+    transform: translateX(100%);
+}
+
+.mode-segment {
+    flex: 1;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    height: 56px;
-    padding: 0 1.25rem;
-    background-color: transparent;
-    border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-    border-radius: var(--radius-sm);
+    justify-content: center;
+    gap: 0.5rem;
+    z-index: 2;
+    background: transparent;
+    border: none;
+    border-radius: 100px;
     cursor: pointer;
-    transition: all var(--dur-fast) var(--ease-standard);
-    color: var(--text);
-    font-family: inherit;
     font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: color 0.2s cubic-bezier(0.2, 0, 0, 1);
+    outline: none;
 }
 
-.mode-option-row:hover {
-    background-color: color-mix(in srgb, var(--surface) 40%, transparent);
-    border-color: color-mix(in srgb, var(--border) 80%, transparent);
-}
-
-.mode-option-row.selected {
-    border-color: var(--primary);
-    border-left: 4px solid var(--primary);
-    background-color: color-mix(in srgb, var(--primary) 5%, transparent);
-}
-
-.mode-row-content {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+.mode-segment.active {
+    color: white;
 }
 
 .mode-icon {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
 }
 
-.mode-text {
-    text-align: left;
-}
-
-.mode-text strong {
-    font-weight: 600;
-}
-
-.mode-radio {
+.mode-description {
+    margin-top: 10px;
+    height: 20px;
+    font-size: 0.85rem;
     color: var(--text-muted);
-    font-size: 1.25rem;
-}
-
-.mode-option-row.selected .mode-radio {
-    color: var(--primary);
+    text-align: center;
+    transition: opacity 0.2s ease;
 }
 
 .input-area-wrapper {

@@ -265,27 +265,27 @@ export default function InputView({ onStart }: InputViewProps) {
                 <h2>What do you want to learn today?</h2>
                 <p>Paste text or drop a file to start listening and learning.</p>
 
-                <div className="mode-options-stack">
-                    <button
-                        className={`mode-option-row ${mode === 'read' ? 'selected' : ''}`}
-                        onClick={() => handleModeSelect('read')}
-                    >
-                        <div className="mode-row-content">
+                <div className="mode-segmented-control-wrapper">
+                    <div className={`mode-segmented-control mode-${mode}`}>
+                        <div className="mode-slider"></div>
+                        <button
+                            className={`mode-segment ${mode === 'read' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('read')}
+                        >
                             <span className="mode-icon">📖</span>
-                            <span className="mode-text"><strong>Read Mode</strong> — Just listen and read</span>
-                        </div>
-                        <span className="mode-radio">{mode === 'read' ? '●' : '○'}</span>
-                    </button>
-                    <button
-                        className={`mode-option-row ${mode === 'learn' ? 'selected' : ''}`}
-                        onClick={() => handleModeSelect('learn')}
-                    >
-                        <div className="mode-row-content">
+                            <span className="mode-text">Read</span>
+                        </button>
+                        <button
+                            className={`mode-segment ${mode === 'learn' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('learn')}
+                        >
                             <span className="mode-icon">🧠</span>
-                            <span className="mode-text"><strong>Read and Learn Mode</strong> — Full quiz and Feynman Test</span>
-                        </div>
-                        <span className="mode-radio">{mode === 'learn' ? '●' : '○'}</span>
-                    </button>
+                            <span className="mode-text">Learn</span>
+                        </button>
+                    </div>
+                    <div className="mode-description fade-in" key={mode}>
+                        {mode === 'read' ? 'Listen and follow along. No tests.' : 'Listen, then take a quiz and Feynman Test.'}
+                    </div>
                 </div>
                 <div className="input-area-wrapper">
                     <textarea
