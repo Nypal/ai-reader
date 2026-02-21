@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Play, Upload, Activity, CheckCircle2, XCircle, Loader2, Volume2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { CheckCircle2, XCircle, Loader2, Sun, Moon, Coffee, FileDown, BookOpen } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 // Setting up the worker for pdf.js in Vite
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
@@ -56,8 +56,19 @@ export default function InputView({ onStart }: InputViewProps) {
     const [showTests, setShowTests] = useState(false);
 
     const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() => {
-        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'onyx';
+        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo';
     });
+
+    const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>(() => {
+        const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | 'sepia' | null;
+        if (savedTheme) return savedTheme;
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        return prefersDark ? 'dark' : 'light';
+    });
+
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+    }, [theme]);
     const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -73,6 +84,7 @@ export default function InputView({ onStart }: InputViewProps) {
         localStorage.setItem('playlearn_voice', voiceId);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handlePreview = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (previewingVoice === selectedVoice) return;
@@ -115,6 +127,7 @@ export default function InputView({ onStart }: InputViewProps) {
         }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const runSystemCheck = async () => {
         setShowTests(true);
         setTestState({ ...initialTestState, backend: { status: 'running' } });
@@ -261,90 +274,101 @@ export default function InputView({ onStart }: InputViewProps) {
     return (
         <div className="view-container input-view fade-in flex flex-col justify-center">
 
-            <div className="input-box glass-panel flex flex-col relative w-full h-full">
-                <div className="top-right-actions">
-                    <button className="icon-btn diagnostics-btn" onClick={runSystemCheck} title="Run System Check" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px', padding: 0, color: 'var(--text-muted)' }}>
-                        <Activity size={18} />
-                    </button>
-                </div>
-                <h2>What do you want to learn today?</h2>
-                <p>Paste text or drop a file to start listening and learning.</p>
-
-                <div className="mode-segmented-control-wrapper">
-                    <div className={`mode-segmented-control mode-${mode}`}>
-                        <div className="mode-slider"></div>
-                        <button
-                            className={`mode-segment ${mode === 'read' ? 'active' : ''}`}
-                            onClick={() => handleModeSelect('read')}
-                        >
-                            <span className="mode-icon">📖</span>
-                            <span className="mode-text">Read</span>
-                        </button>
-                        <button
-                            className={`mode-segment ${mode === 'learn' ? 'active' : ''}`}
-                            onClick={() => handleModeSelect('learn')}
-                        >
-                            <span className="mode-icon">🧠</span>
-                            <span className="mode-text">Learn</span>
-                        </button>
+            <div className="input-box flex flex-col w-full h-full">
+                <div className="input-header">
+                    <div className="header-title-row">
+                        <BookOpen size={24} style={{ color: 'var(--primary)' }} />
+                        <h2>NeuralReader</h2>
                     </div>
-                    <div className="mode-description fade-in" key={mode}>
-                        {mode === 'read' ? 'Listen and follow along. No tests.' : 'Listen, then take a quiz and Feynman Test.'}
+                    <p>Your AI powered reading companion</p>
+                </div>
+                <div className="top-control-bar">
+                    <div className="mode-segmented-control-wrapper">
+                        <div className={`mode-segmented-control mode-${mode}`}>
+                            <div className="mode-slider"></div>
+                            <button
+                                className={`mode-segment ${mode === 'read' ? 'active' : ''}`}
+                                onClick={() => handleModeSelect('read')}
+                            >
+                                <span className="mode-text">Read</span>
+                            </button>
+                            <button
+                                className={`mode-segment ${mode === 'learn' ? 'active' : ''}`}
+                                onClick={() => handleModeSelect('learn')}
+                            >
+                                <span className="mode-text">Learn</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="theme-triple-pill" role="group" aria-label="Theme Selection">
+                        <button
+                            className={`theme-pill ${theme === 'light' ? 'active' : ''}`}
+                            onClick={() => { setTheme('light'); document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('theme', 'light'); }}
+                            aria-label="Light Mode"
+                            title="Light Mode"
+                        >
+                            <Sun size={14} /> Light
+                        </button>
+                        <button
+                            className={`theme-pill ${theme === 'dark' ? 'active' : ''}`}
+                            onClick={() => { setTheme('dark'); document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('theme', 'dark'); }}
+                            aria-label="Dark Mode"
+                            title="Dark Mode"
+                        >
+                            <Moon size={14} /> Dark
+                        </button>
+                        <button
+                            className={`theme-pill ${theme === 'sepia' ? 'active' : ''}`}
+                            onClick={() => { setTheme('sepia'); document.documentElement.setAttribute('data-theme', 'sepia'); localStorage.setItem('theme', 'sepia'); }}
+                            aria-label="Sepia Mode"
+                            title="Sepia Mode"
+                        >
+                            <Coffee size={14} /> Sepia
+                        </button>
                     </div>
                 </div>
                 <div className="input-area-wrapper">
                     {!text && !isExtracting && (
                         <div className="empty-state-overlay">
-                            <Upload size={32} opacity={0.5} />
-                            <p>Paste text or drop a file here</p>
+                            <FileDown size={32} opacity={0.4} strokeWidth={1.5} />
+                            <p>Paste text or drop file</p>
                         </div>
                     )}
                     <textarea
                         className="main-textarea"
-                        placeholder={isExtracting ? "Extracting text... Please wait." : "Paste your text here..."}
+                        placeholder={isExtracting ? "Extracting text... Please wait." : ""}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         disabled={isExtracting}
                     />
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.pdf" style={{ display: 'none' }} />
                 </div>
 
-                <div className="voice-selector-row">
-                    <span className="voice-label">Voice:</span>
-                    <div className="voice-pills">
+                <div className="bottom-control-bar">
+                    <div className="voice-grid">
                         {TTS_VOICES.map(v => (
                             <button
                                 key={v.id}
-                                className={`voice-pill ${selectedVoice === v.id ? 'active' : ''}`}
+                                className={`voice-chip ${selectedVoice === v.id ? 'active' : ''}`}
                                 onClick={() => handleVoiceSelect(v.id)}
-                                title={v.desc}
                             >
-                                {v.name}
+                                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="waveform-icon">
+                                    <path d="M4 12v.01" />
+                                    <path d="M8 8v8" />
+                                    <path d="M12 4v16" />
+                                    <path d="M16 9v6" />
+                                    <path d="M20 12v.01" />
+                                </svg>
+                                <span>{v.name}</span>
                             </button>
                         ))}
                     </div>
-                    <button
-                        className="preview-btn icon-btn"
-                        onClick={handlePreview}
-                        title={`Preview ${TTS_VOICES.find(v => v.id === selectedVoice)?.name} voice`}
-                        disabled={previewingVoice !== null}
-                    >
-                        {previewingVoice !== null ? <Loader2 size={16} className="spin-icon text-primary" /> : <Volume2 size={16} />}
-                    </button>
-                </div>
-
-                <div className="input-actions">
-                    <div className="left-actions">
-                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.pdf" style={{ display: 'none' }} />
-                        <button className="icon-btn" title="Upload File" onClick={() => fileInputRef.current?.click()} disabled={isExtracting}>
-                            <Upload size={20} />
-                            <span className="hide-mobile">Upload File</span>
+                    <div className="action-buttons-right">
+                        <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting}>
+                            <span>Start Reading</span>
                         </button>
                     </div>
-
-                    <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting}>
-                        <Play size={20} fill="currentColor" />
-                        <span>{mode === 'read' ? 'Start' : 'Play & Learn'}</span>
-                    </button>
                 </div>
             </div>
 

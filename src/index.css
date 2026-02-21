@@ -1,26 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Premium Deep Space Colors */
-  --bg: #0A0A0F;
-  --surface: #13131A;
-  --border: #1E1E2E;
+  /* Premium Paper & Glass Colors */
+  --bg: #F0F0F0;
+  --surface: #FFFFFF;
+  --border: rgba(15, 23, 42, 0.08);
 
-  --primary: #7C6AF7;
+  --primary: #3D3DC8;
   --on-primary: #FFFFFF;
 
   --secondary: #06B6D4;
   --on-secondary: #FFFFFF;
 
-  --accent: #7C6AF7;
+  --accent: #6356E5;
   --on-accent: #FFFFFF;
 
-  --text: #E8E8F0;
+  --text: #0B1220;
   --text-muted: #6B6B8A;
 
-  --focus-ring: rgba(124, 106, 247, 0.4);
+  --focus-ring: rgba(99, 86, 229, 0.4);
 
   /* Spacing */
   --space-1: 4px;
@@ -34,12 +34,13 @@
   /* Radius & Shadows */
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 20px;
+  --radius-lg: 24px;
+  /* Increased for premium card feel */
   --radius-full: 9999px;
 
-  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.25);
-  --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px rgba(124, 106, 247, 0.15);
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 20px rgba(99, 86, 229, 0.15);
 
   /* Typography */
   --font-heading: 'Playfair Display', Georgia, serif;
@@ -65,40 +66,55 @@
 /* Light Theme Fallback */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]):not([data-theme="sepia"]) {
-    --bg: #FFFFFF;
-    --surface: #F8F9FA;
-    --border: rgba(15, 23, 42, 0.12);
+    --bg: #F0F0F0;
+    --surface: #FFFFFF;
+    --border: rgba(15, 23, 42, 0.08);
     --text: #0B1220;
     --text-muted: #6B6B8A;
-    --focus-ring: rgba(124, 106, 247, 0.4);
+    --focus-ring: rgba(99, 86, 229, 0.4);
+
+    --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.05);
+    --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.08);
   }
 }
 
 :root[data-theme="light"] {
-  --bg: #FFFFFF;
-  --surface: #F8F9FA;
-  --border: rgba(15, 23, 42, 0.12);
+  color-scheme: light;
+  --bg: #F0F0F0;
+  --surface: #FFFFFF;
+  --border: rgba(15, 23, 42, 0.08);
   --text: #0B1220;
   --text-muted: #6B6B8A;
-  --focus-ring: rgba(124, 106, 247, 0.4);
+  --focus-ring: rgba(99, 86, 229, 0.4);
+
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 12px 48px rgba(0, 0, 0, 0.08);
 }
 
 :root[data-theme="dark"] {
-  --bg: #0A0A0F;
-  --surface: #13131A;
+  color-scheme: dark;
+  --bg: #1A1A2E;
+  --surface: #16213E;
   --border: #1E1E2E;
   --text: #E8E8F0;
   --text-muted: #6B6B8A;
-  --focus-ring: rgba(124, 106, 247, 0.4);
+  --focus-ring: rgba(99, 86, 229, 0.4);
+
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme="sepia"] {
-  --bg: #F5E6D3;
-  --surface: #EBE0CD;
+  color-scheme: light;
+  --bg: #E8DCC8;
+  --surface: #FFFDF7;
   --border: rgba(67, 52, 34, 0.12);
   --text: #4A4A45;
   --text-muted: #797166;
-  --focus-ring: rgba(124, 106, 247, 0.4);
+  --focus-ring: rgba(99, 86, 229, 0.4);
+
+  --shadow-1: 0 4px 14px rgba(67, 52, 34, 0.1);
+  --shadow-2: 0 12px 48px rgba(67, 52, 34, 0.15);
 }
 
 * {
@@ -120,8 +136,7 @@ body {
 }
 
 :root[data-theme="dark"] body {
-  background-image: radial-gradient(circle at top right, rgba(124, 106, 247, 0.05) 0%, transparent 40%),
-    radial-gradient(circle at bottom left, rgba(6, 182, 212, 0.05) 0%, transparent 40%);
+  background-image: none;
 }
 
 /* Glass panel utility */

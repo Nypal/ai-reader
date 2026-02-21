@@ -36,7 +36,7 @@ function App() {
 
   return (
     <div className="app-layout">
-      <Header />
+      {appState !== 'input' && <Header />}
       <main className="main-content">
         {appState === 'input' && <InputView onStart={handleStartReading} />}
         {appState === 'reading' && <ReaderView content={content} onFinish={handleFinishReading} onBack={() => setAppState('input')} />}
