@@ -13,11 +13,13 @@ function App() {
   const [appState, setAppState] = useState<AppState>('input');
   const [content, setContent] = useState<string>('');
   const [readingMode, setReadingMode] = useState<'read' | 'learn'>('learn');
+  const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
 
-  const handleStartReading = (text: string, mode: 'read' | 'learn') => {
+  const handleStartReading = (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => {
     if (!text.trim()) return;
     setContent(text);
     setReadingMode(mode);
+    setReadingLanguage(language);
     setAppState('reading');
   };
 
@@ -61,7 +63,7 @@ function App() {
               transition={{ duration: 0.3 }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <ReaderView content={content} onFinish={handleFinishReading} onBack={() => setAppState('input')} />
+              <ReaderView content={content} readingLanguage={readingLanguage} onFinish={handleFinishReading} onBack={() => setAppState('input')} />
             </motion.div>
           )}
           {appState === 'quiz' && (

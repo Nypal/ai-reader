@@ -30,7 +30,7 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/tts', async (req, res) => {
     try {
-        const { text, voice = 'alloy' } = req.body;
+        const { text, voice = 'alloy', language = 'english' } = req.body;
 
         if (!text) {
             return res.status(400).json({ error: 'Text is required' });
@@ -40,7 +40,7 @@ app.post('/api/tts', async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key is missing or invalid in backend/.env' });
         }
 
-        console.log(`Generating audio for chunk (${text.length} chars)...`);
+        console.log(`Generating ${language} audio for chunk (${text.length} chars) using voice ${voice}...`);
 
         const mp3 = await openai.audio.speech.create({
             model: 'tts-1',
@@ -200,65 +200,6 @@ You MUST return the output ONLY as valid JSON in this exact structure, using the
     }
 });
 
-app.post('/api/translate', async (req, res) => {
-    try {
-        const { text } = req.body;
-
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
-        }
-
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            return res.status(500).json({ error: 'OpenAI API key is missing or invalid in backend/.env' });
-        }
-
-        console.log(`Translating text to French(${text.length} chars)...`);
-
-        const prompt = `Translate the following text into fluent, natural - sounding French.Do not add any extra commentary, just output the translated text.Maintain proper paragraph formatting.\n\nText: \n${text} `;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.3,
-        });
-
-        res.json({ translatedText: completion.choices[0].message.content });
-    } catch (error) {
-        console.error('Translation Error:', error);
-        res.status(500).json({ error: 'Failed to translate text' });
-    }
-});
-
-app.post('/api/translate', async (req, res) => {
-    try {
-        const { text } = req.body;
-
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
-        }
-
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            return res.status(500).json({ error: 'OpenAI API key is missing or invalid in backend/.env' });
-        }
-
-        console.log(`Translating text to French(${text.length} chars)...`);
-
-        const prompt = `Translate the following text into fluent, natural - sounding French.Do not add any extra commentary, just output the translated text.Maintain proper paragraph formatting.\n\nText: \n${text} `;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.3,
-        });
-
-        res.json({ translatedText: completion.choices[0].message.content });
-    } catch (error) {
-        console.error('Translation Error:', error);
-        res.status(500).json({ error: 'Failed to translate text' });
-    }
-});
-
 app.listen(port, () => {
     console.log(`Backend proxy running on http://localhost:${port}`);
 });
-

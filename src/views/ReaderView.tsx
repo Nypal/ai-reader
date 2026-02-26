@@ -8,6 +8,7 @@ import './ReaderView.css';
 
 interface ReaderViewProps {
     content: string;
+    readingLanguage: 'english' | 'french';
     onFinish: () => void;
     onBack: () => void;
 }
@@ -46,7 +47,7 @@ function blobUrlFrom(buf: ArrayBuffer, contentType: string) {
     return { blob, url: URL.createObjectURL(blob), byteLength: buf.byteLength, contentType };
 }
 
-export default function ReaderView({ content, onFinish, onBack }: ReaderViewProps) {
+export default function ReaderView({ content, readingLanguage, onFinish, onBack }: ReaderViewProps) {
     const effectiveContent = content?.trim() || "Hello, this is a playback test.";
     const { original: sentences, spoken: sentencesSpoken } = useSentenceSplitter(effectiveContent);
 
@@ -212,7 +213,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
         const res = await fetch('http://localhost:3001/api/tts', {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ text, voice: voiceRef.current, format: "mp3" }),
+            body: JSON.stringify({ text, voice: voiceRef.current, language: readingLanguage, format: "mp3" }),
             signal,
         });
 
@@ -241,7 +242,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
         });
 
         return { buf: buf, contentType: assertAudioContentType(ct) };
-    }, [isSlowBackend]);
+    }, [isSlowBackend, readingLanguage]);
 
     const ensurePrefetchWindow = useCallback(
         async (baseIdx: number, myRunId: number) => {
