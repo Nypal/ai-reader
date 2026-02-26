@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "framer-motion": "^12.34.3",
     "lucide-react": "^0.575.0",
     "pdfjs-dist": "^5.4.624",
     "react": "^19.2.0",

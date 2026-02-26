@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Header from './components/Header';
 import InputView from "./views/InputView";
 import ReaderView from "./views/ReaderView";
@@ -38,9 +39,44 @@ function App() {
     <div className="app-layout">
       {appState !== 'input' && <Header />}
       <main className="main-content">
-        {appState === 'input' && <InputView onStart={handleStartReading} />}
-        {appState === 'reading' && <ReaderView content={content} onFinish={handleFinishReading} onBack={() => setAppState('input')} />}
-        {appState === 'quiz' && <QuizView content={content} onRestart={handleRestart} />}
+        <AnimatePresence mode="wait">
+          {appState === 'input' && (
+            <motion.div
+              key="input"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
+            >
+              <InputView onStart={handleStartReading} />
+            </motion.div>
+          )}
+          {appState === 'reading' && (
+            <motion.div
+              key="reading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
+            >
+              <ReaderView content={content} onFinish={handleFinishReading} onBack={() => setAppState('input')} />
+            </motion.div>
+          )}
+          {appState === 'quiz' && (
+            <motion.div
+              key="quiz"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
+            >
+              <QuizView content={content} onRestart={handleRestart} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
