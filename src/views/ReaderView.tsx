@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Square, ArrowLeft, Settings2, SkipBack, Activity } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Settings2, SkipBack, SkipForward, Play, Pause, Activity } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
 import { AuditService } from '../services/AuditService';
 import AudioVisualizer from '../components/AudioVisualizer';
@@ -56,6 +57,11 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     const [voiceUI, setVoiceUI] = useState<TTSVoice>(() => {
         return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'onyx';
     });
+    const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+    const handleSpeedToggle = () => {
+        const nextIdx = (SPEEDS.indexOf(speed) + 1) % SPEEDS.length;
+        setSpeed(SPEEDS[nextIdx]);
+    };
 
     // Technical Audit State
     const [ttsLatencyAvg, setTtsLatencyAvg] = useState(0);
@@ -68,6 +74,9 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     const abortRef = useRef<AbortController | null>(null);
     const inFlightPlayRef = useRef<Promise<void> | null>(null);
     const voiceRef = useRef<TTSVoice>(voiceUI);
+
+    const [sentenceProgress, setSentenceProgress] = useState(0);
+    const animationFrameRef = useRef<number>(0);
 
     const sessionStartTimeRef = useRef<number>(Date.now());
     const maxSpeedUsedRef = useRef<number>(speed);
@@ -104,13 +113,22 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
 
         const cacheMap = cacheRef.current;
 
+        const loop = () => {
+            if (audioRef.current && audioRef.current.duration > 0 && !audioRef.current.paused) {
+                setSentenceProgress(audioRef.current.currentTime / audioRef.current.duration);
+            }
+            animationFrameRef.current = requestAnimationFrame(loop);
+        };
+
         a.onplaying = () => {
             if (isStoppedRef.current) return;
             setPlaybackState("playing");
+            animationFrameRef.current = requestAnimationFrame(loop);
         };
         a.onpause = () => {
             if (isStoppedRef.current) return;
             setPlaybackState((s) => (s === "playing" ? "paused" : s));
+            cancelAnimationFrame(animationFrameRef.current);
         };
         a.onended = () => {
             if (isStoppedRef.current) return;
@@ -149,6 +167,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
             }, 0);
 
             audioRef.current = null;
+            cancelAnimationFrame(animationFrameRef.current);
         };
     }, []);
 
@@ -387,6 +406,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
 
         try {
             setCurrentSentenceIdx(idx);
+            setSentenceProgress(0);
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;
             console.log(`[PlayLearn] play started idx=${idx} ttfs_ms=${Math.round(nowMs() - t0)}ms`);
@@ -503,8 +523,36 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
     const renderText = () => {
         return sentences.map((sentence, idx) => {
             const isHighlighted = idx === currentSentenceIdx;
+            const words = sentence.split(/(\s+)/); // Keep delimiters to preserve spacing
+            const wordCount = words.filter(w => w.trim().length > 0).length;
+            const activeWordIdx = isHighlighted ? Math.floor(wordCount * sentenceProgress) : -1;
+
+            let currentWordCount = 0;
+
+            const wordElements = words.map((chunk, chunkIdx) => {
+                if (chunk.trim().length === 0) {
+                    return <span key={chunkIdx} className="space-chunk">{chunk}</span>;
+                }
+
+                const isWordActive = isHighlighted && currentWordCount === activeWordIdx;
+                const isWordPast = isHighlighted && currentWordCount < activeWordIdx;
+
+                let wordClass = "word";
+                if (isWordActive) wordClass += " active-word";
+                else if (isWordPast) wordClass += " past-word";
+                else wordClass += " future-word";
+
+                currentWordCount++;
+
+                return (
+                    <span key={chunkIdx} className={wordClass}>
+                        {chunk}
+                    </span>
+                );
+            });
+
             return (
-                <span
+                <motion.span
                     key={idx}
                     ref={(el) => { sentenceRefs.current[idx] = el; }}
                     className="sentence"
@@ -519,46 +567,31 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
                             handleSeek(idx);
                         }
                     }}
+                    initial={{ opacity: 0.5, y: 0 }}
+                    animate={isHighlighted ? {
+                        opacity: 1,
+                        y: -1,
+                        backgroundColor: "rgba(139, 92, 246, 0.14)",
+                        borderLeftColor: "var(--primary)"
+                    } : {
+                        opacity: 0.5,
+                        y: 0,
+                        backgroundColor: "transparent",
+                        borderLeftColor: "transparent"
+                    }}
+                    transition={{
+                        duration: 0.3,
+                        ease: "easeInOut"
+                    }}
                 >
-                    {sentence}{" "}
-                </span>
+                    {wordElements}
+                </motion.span>
             );
         });
     };
 
     return (
         <div className="view-container reader-view">
-            <div className="reader-header flex-between">
-                <button className="back-btn" onClick={handleBack}>
-                    <ArrowLeft size={20} />
-                    <span>Back to Start</span>
-                </button>
-                <div className="header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {isSlowBackend && (
-                        <div className="slow-backend-warning glass-panel" style={{ color: 'var(--warning)', fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid rgba(234, 179, 8, 0.2)' }} title={`High Latency Detected (~${Math.round(ttsLatencyAvg)}ms)`}>
-                            <Activity size={12} /> <span className="hide-mobile">Slow Connection</span>
-                        </div>
-                    )}
-                    <div className="speed-control">
-                        <select
-                            value={speed}
-                            onChange={(e) => setSpeed(Number(e.target.value))}
-                            className="speed-select speed-chip"
-                            aria-label="Playback speed"
-                        >
-                            <option value={0.75}>0.75x</option>
-                            <option value={1}>1.0x</option>
-                            <option value={1.25}>1.25x</option>
-                            <option value={1.5}>1.5x</option>
-                            <option value={2}>2.0x</option>
-                        </select>
-                    </div>
-                    <button className="settings-btn" title="Audio Settings">
-                        <Settings2 size={20} />
-                    </button>
-                </div>
-            </div>
-
             <div className="progress-container top-progress">
                 <input
                     type="range"
@@ -566,6 +599,7 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
                     min={0}
                     max={sentences.length > 0 ? sentences.length - 1 : 0}
                     value={Math.max(0, currentSentenceIdx)}
+                    style={{ backgroundSize: `${sentences.length ? (Math.max(0, currentSentenceIdx) / (sentences.length - 1)) * 100 : 0}% 100%` }}
                     onChange={(e) => handleSeek(Number(e.target.value))}
                     aria-valuemin={0}
                     aria-valuemax={sentences.length > 0 ? sentences.length - 1 : 0}
@@ -574,6 +608,36 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
                     disabled={sentences.length === 0}
                 />
             </div>
+
+            <div className="reader-header" style={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 1fr) auto minmax(100px, 1fr)', alignItems: 'center' }}>
+                <div style={{ justifySelf: 'start' }}>
+                    <button className="back-btn" onClick={handleBack}>
+                        <ArrowLeft size={20} />
+                        <span>Back</span>
+                    </button>
+                </div>
+
+                <div style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <AudioVisualizer
+                        audioElement={audioRef.current}
+                        isPlaying={playbackState === 'playing'}
+                        onClick={togglePlay}
+                    />
+                </div>
+
+                <div className="header-actions" style={{ justifySelf: 'end', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {isSlowBackend && (
+                        <div className="slow-backend-warning glass-panel" style={{ color: 'var(--warning)', fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid rgba(234, 179, 8, 0.2)' }} title={`High Latency Detected (~${Math.round(ttsLatencyAvg)}ms)`}>
+                            <Activity size={12} /> <span className="hide-mobile">Slow Connection</span>
+                        </div>
+                    )}
+                    <button className="settings-btn" title="Audio Settings">
+                        <Settings2 size={20} />
+                    </button>
+                </div>
+            </div>
+
+
 
             <div className="reader-content" data-has-active={currentSentenceIdx >= 0}>
                 <p className="reading-text">
@@ -586,50 +650,61 @@ export default function ReaderView({ content, onFinish, onBack }: ReaderViewProp
                 )}
             </div>
 
-            <div className="reader-controls-wrapper glass-panel">
-                <div className="controls-row" style={{ position: 'relative' }}>
-                    <div className="main-controls">
-                        <button
-                            className="control-btn secondary"
-                            aria-label="Previous sentence"
-                            onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))}
-                            disabled={currentSentenceIdx <= 0}
-                            title="Previous Sentence"
-                        >
-                            <SkipBack size={24} />
-                        </button>
+            <div className="reader-controls-pill">
+                <div className="pill-left">
+                    <button
+                        className="control-btn"
+                        onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))}
+                        disabled={currentSentenceIdx <= 0}
+                        aria-label="Previous sentence"
+                    >
+                        <SkipBack size={20} />
+                    </button>
+                    <button
+                        className="control-btn play-btn"
+                        onClick={togglePlay}
+                        aria-label="Play or Pause"
+                    >
+                        {playbackState === 'playing' ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
+                    </button>
+                    <button
+                        className="control-btn"
+                        onClick={() => handleSeek(Math.min(sentences.length - 1, currentSentenceIdx + 1))}
+                        disabled={currentSentenceIdx >= sentences.length - 1}
+                        aria-label="Next sentence"
+                    >
+                        <SkipForward size={20} />
+                    </button>
+                </div>
 
-                        <AudioVisualizer
-                            audioElement={audioRef.current}
-                            isPlaying={playbackState === 'playing'}
-                            onClick={togglePlay}
-                        />
-
-                        <button
-                            className="control-btn secondary"
-                            aria-label="Stop playback"
-                            onClick={resetPlay}
-                            disabled={(playbackState === 'idle' || playbackState === 'completed') && currentSentenceIdx <= 0}
-                            title="Stop Audio"
-                        >
-                            <Square size={20} fill="currentColor" />
-                        </button>
-                    </div>
-                    <div className="voice-control-bottom" style={{ position: 'absolute', right: 0 }}>
+                <div className="pill-right">
+                    <button className="speed-toggle" onClick={handleSpeedToggle} aria-label="Toggle Speed">
+                        <AnimatePresence mode="popLayout">
+                            <motion.span
+                                key={speed}
+                                initial={{ y: 15, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                exit={{ y: -15, opacity: 0 }}
+                                transition={{ duration: 0.15, ease: "easeInOut" }}
+                                style={{ display: 'inline-block' }}
+                            >
+                                {speed}x
+                            </motion.span>
+                        </AnimatePresence>
+                    </button>
+                    <div className="voice-selector">
                         <select
                             value={voiceUI}
                             onChange={(e) => handleVoiceChange(e.target.value as TTSVoice)}
-                            className="speed-select speed-chip"
+                            className="voice-select"
                             aria-label="Narrator voice"
-                            style={{ maxWidth: '140px', textOverflow: 'ellipsis' }}
-                            title="Select Narrator Voice"
                         >
-                            <option value="onyx">Onyx (Deep authoritative male)</option>
-                            <option value="echo">Echo (Calm clear male)</option>
-                            <option value="fable">Fable (Warm storytelling male)</option>
-                            <option value="nova">Nova (Clear friendly female)</option>
-                            <option value="shimmer">Shimmer (Soft gentle female)</option>
-                            <option value="alloy">Alloy (Neutral balanced)</option>
+                            <option value="onyx">Onyx</option>
+                            <option value="echo">Echo</option>
+                            <option value="fable">Fable</option>
+                            <option value="nova">Nova</option>
+                            <option value="shimmer">Shimmer</option>
+                            <option value="alloy">Alloy</option>
                         </select>
                     </div>
                 </div>

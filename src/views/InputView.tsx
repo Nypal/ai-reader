@@ -44,6 +44,8 @@ const initialTestState: SystemTestState = {
 export default function InputView({ onStart }: InputViewProps) {
     const [text, setText] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [translateToFrench, setTranslateToFrench] = useState(false);
 
     const [mode, setMode] = useState<'read' | 'learn'>(() => {
         return (localStorage.getItem('playlearn_mode') as 'read' | 'learn') || 'learn';
@@ -72,7 +74,31 @@ export default function InputView({ onStart }: InputViewProps) {
     const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
-    const handlePlay = () => onStart(text, mode);
+    const handlePlay = async () => {
+        if (!text.trim()) return;
+
+        if (translateToFrench) {
+            setIsTranslating(true);
+            try {
+                const res = await fetch('http://localhost:3001/api/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                if (!res.ok) throw new Error('Translation failed');
+                const data = await res.json();
+                onStart(data.translatedText, mode);
+            } catch (error) {
+                console.error("Translation ERROR:", error);
+                alert("Failed to translate the text to French.");
+            } finally {
+                setIsTranslating(false);
+            }
+        } else {
+            onStart(text, mode);
+        }
+    };
 
     const handleModeSelect = (newMode: 'read' | 'learn') => {
         setMode(newMode);
@@ -337,10 +363,10 @@ export default function InputView({ onStart }: InputViewProps) {
                     )}
                     <textarea
                         className="main-textarea"
-                        placeholder={isExtracting ? "Extracting text... Please wait." : ""}
+                        placeholder={isExtracting ? "Extracting text... Please wait." : isTranslating ? "Translating text... Please wait." : ""}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        disabled={isExtracting}
+                        disabled={isExtracting || isTranslating}
                     />
                     <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.pdf" style={{ display: 'none' }} />
                 </div>
@@ -364,9 +390,18 @@ export default function InputView({ onStart }: InputViewProps) {
                             </button>
                         ))}
                     </div>
-                    <div className="action-buttons-right">
-                        <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting}>
-                            <span>Start Reading</span>
+                    <div className="action-buttons-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                            <input
+                                type="checkbox"
+                                checked={translateToFrench}
+                                onChange={(e) => setTranslateToFrench(e.target.checked)}
+                                disabled={isExtracting || isTranslating}
+                            />
+                            Translate to French
+                        </label>
+                        <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting || isTranslating}>
+                            {isTranslating ? <Loader2 size={18} className="spin-icon" /> : <span>Start Reading</span>}
                         </button>
                     </div>
                 </div>

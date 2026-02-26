@@ -14,14 +14,20 @@ interface Question {
     concept: string;
     type: string;
     question: string;
-    options: string[];
-    correctAnswerIndex: number;
-    explanation: string;
+    // Fields below are no longer returned by the new /api/quiz
+    options?: string[];
+    correctAnswerIndex?: number;
+    explanation?: string;
 }
 
 interface QuizData {
     questions: Question[];
     summary: string[];
+}
+
+interface EvaluationResult {
+    score: 'correct' | 'partial' | 'incorrect';
+    explanation: string;
 }
 
 interface FeynmanFeedback {
@@ -36,11 +42,12 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [currentIdx, setCurrentIdx] = useState(0);
-    const [selectedOption, setSelectedOption] = useState<number | null>(null);
+    const [userAnswer, setUserAnswer] = useState('');
+    const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+    const [isEvaluating, setIsEvaluating] = useState(false);
     const [score, setScore] = useState(0);
     const [incorrectQuestions, setIncorrectQuestions] = useState<Question[]>([]);
     const [isComplete, setIsComplete] = useState(false);
-    const [isOptionsRevealed, setIsOptionsRevealed] = useState(false);
 
     // Feynman test state
     const [feynmanStep, setFeynmanStep] = useState<'prepare' | 'write' | 'feedback'>('prepare');
@@ -74,21 +81,40 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
         fetchQuiz();
     }, [content]);
 
-    const handleSelect = (idx: number) => {
-        if (selectedOption !== null || !quizData) return;
+    const handleAnswerSubmit = async () => {
+        if (!userAnswer.trim() || !quizData || evaluation) return;
 
-        setSelectedOption(idx);
+        setIsEvaluating(true);
+        try {
+            const currentQ = quizData.questions[currentIdx];
+            const res = await fetch('http://localhost:3001/api/evaluate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question: currentQ.question,
+                    answer: userAnswer,
+                    paragraphText: currentQ.paragraphText
+                })
+            });
 
-        const isCorrect = idx === quizData.questions[currentIdx].correctAnswerIndex;
-        if (isCorrect) {
-            setScore(s => s + 1);
-        } else {
-            setIncorrectQuestions(prev => [...prev, quizData.questions[currentIdx]]);
-        }
+            if (!res.ok) throw new Error('Evaluation failed');
 
-        const concept = quizData.questions[currentIdx].concept;
-        if (concept) {
-            AuditService.logQuizResult(concept, isCorrect);
+            const data: EvaluationResult = await res.json();
+            setEvaluation(data);
+
+            if (data.score === 'correct') {
+                setScore(s => s + 1);
+            } else if (data.score === 'incorrect') {
+                setIncorrectQuestions(prev => [...prev, currentQ]);
+            }
+
+            if (currentQ.concept) {
+                AuditService.logQuizResult(currentQ.concept, data.score === 'correct');
+            }
+        } catch (err) {
+            console.error('Failed to evaluate:', err);
+        } finally {
+            setIsEvaluating(false);
         }
     };
 
@@ -97,8 +123,8 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
 
         if (currentIdx < quizData.questions.length - 1) {
             setCurrentIdx(prev => prev + 1);
-            setSelectedOption(null);
-            setIsOptionsRevealed(false);
+            setUserAnswer('');
+            setEvaluation(null);
         } else {
             setIsComplete(true);
         }
@@ -377,7 +403,6 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
     }
 
     const currentQ = quizData.questions[currentIdx];
-    const hasAnswered = selectedOption !== null;
 
     return (
         <div className="view-container quiz-view fullscreen-quiz">
@@ -404,57 +429,49 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
                     <span className="question-type-badge">{currentQ.type} Question</span>
                     <h2 className="main-question">{currentQ.question}</h2>
 
-                    {!isOptionsRevealed ? (
-                        <div className="active-recall-overlay glass-panel fade-in">
-                            <Brain size={48} className="recall-icon" />
-                            <h3>Active Recall Challenge</h3>
-                            <p>What do you remember about this? Force your brain to retrieve the concept before seeing the answers.</p>
-                            <button className="primary-btn reveal-btn" onClick={() => setIsOptionsRevealed(true)}>
-                                Reveal Options
+                    <div className="free-text-input-area" style={{ marginTop: '1.5rem' }}>
+                        <textarea
+                            className="feynman-textarea"
+                            style={{ minHeight: '120px', marginBottom: '1rem', fontSize: '1.1rem' }}
+                            placeholder="Type your answer here based on the text..."
+                            value={userAnswer}
+                            onChange={e => setUserAnswer(e.target.value)}
+                            disabled={isEvaluating || !!evaluation}
+                            rows={4}
+                        />
+                        {!evaluation && (
+                            <button
+                                className="primary-btn submit-answer-btn"
+                                style={{ width: '100%', padding: '1rem' }}
+                                onClick={handleAnswerSubmit}
+                                disabled={isEvaluating || !userAnswer.trim()}
+                            >
+                                {isEvaluating ? <Loader className="spinner" size={20} /> : 'Submit Answer'}
                             </button>
-                        </div>
-                    ) : (
-                        <div className="options-grid fade-in">
-                            {currentQ.options.map((opt, optIdx) => {
-                                const isSelected = selectedOption === optIdx;
-                                const isCorrectAnswer = currentQ.correctAnswerIndex === optIdx;
-
-                                let optionClass = "quiz-option-btn glass-panel ";
-                                if (hasAnswered) {
-                                    if (isCorrectAnswer) optionClass += "correct-answer ";
-                                    else if (isSelected) optionClass += "wrong-answer ";
-                                    else optionClass += "dimmed ";
-                                }
-
-                                return (
-                                    <button
-                                        key={optIdx}
-                                        className={optionClass}
-                                        onClick={() => handleSelect(optIdx)}
-                                        disabled={hasAnswered}
-                                    >
-                                        <div className="option-marker">{String.fromCharCode(65 + optIdx)}</div>
-                                        <div className="option-text">{opt}</div>
-                                        {hasAnswered && isCorrectAnswer && <CheckCircle2 className="feedback-icon" size={20} />}
-                                        {hasAnswered && isSelected && !isCorrectAnswer && <XCircle className="feedback-icon" size={20} />}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
-                {hasAnswered && (
-                    <div className={`feedback-panel glass-panel fade-in ${selectedOption === currentQ.correctAnswerIndex ? 'success-feedback' : 'error-feedback'}`}>
+                {evaluation && (
+                    <div className={`feedback-panel glass-panel fade-in ${evaluation.score === 'correct' ? 'success-feedback' : evaluation.score === 'partial' ? 'warning-feedback' : 'error-feedback'}`} style={{ marginTop: '2rem' }}>
                         <div className="feedback-header">
-                            {selectedOption === currentQ.correctAnswerIndex ? (
+                            {evaluation.score === 'correct' ? (
                                 <><CheckCircle2 size={24} /> <h3>Correct</h3></>
+                            ) : evaluation.score === 'partial' ? (
+                                <><AlertCircle size={24} /> <h3>Partially Correct</h3></>
                             ) : (
                                 <><XCircle size={24} /> <h3>Incorrect</h3></>
                             )}
                         </div>
-                        <p>{currentQ.explanation}</p>
-                        <button className="primary-btn next-q-btn" onClick={handleNext}>
+                        <p style={{ fontSize: '1.1rem', lineHeight: '1.6', margin: '1rem 0' }}>{evaluation.explanation}</p>
+
+                        {evaluation.score === 'incorrect' && (
+                            <div className="re-read-suggestion" style={{ padding: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', marginBottom: '1.5rem', borderLeft: '3px solid var(--error)' }}>
+                                <p style={{ margin: 0, color: 'var(--error)' }}><strong>Suggestion:</strong> Re-read the context paragraph carefully before moving on. Deep understanding takes time!</p>
+                            </div>
+                        )}
+
+                        <button className="primary-btn next-q-btn" style={{ width: '100%', padding: '1rem' }} onClick={handleNext}>
                             <span>{currentIdx === quizData.questions.length - 1 ? 'See Results' : 'Next Question'}</span>
                             <ArrowRight size={20} />
                         </button>
@@ -464,3 +481,4 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
         </div>
     );
 }
+
