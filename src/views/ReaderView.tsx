@@ -437,21 +437,15 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
 
     // Auto-start playback on mount
     useEffect(() => {
-        if (sentences.length > 0 && playbackState === 'idle') {
-            const timer = setTimeout(() => {
-                // Ensure we only try to play if we are still idle
-                if (isStoppedRef.current) {
-                    runIdRef.current += 1;
-                    isStoppedRef.current = false;
-                    setLastError(null);
-                    abortRef.current = new AbortController();
-                    playIndex(0, runIdRef.current).catch((e: unknown) => {
-                        setPlaybackState("error");
-                        setLastError(e instanceof Error ? e.message : String(e));
-                    });
-                }
-            }, 100); // slight delay to allow audio element to mount
-            return () => clearTimeout(timer);
+        if (sentences.length > 0 && playbackState === 'idle' && isStoppedRef.current) {
+            runIdRef.current += 1;
+            isStoppedRef.current = false;
+            setLastError(null);
+            abortRef.current = new AbortController();
+            playIndex(0, runIdRef.current).catch((e: unknown) => {
+                setPlaybackState("error");
+                setLastError(e instanceof Error ? e.message : String(e));
+            });
         }
     }, [sentences.length, playbackState, playIndex]);
 
@@ -609,8 +603,21 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
                     {sentences.map((sentence, idx) => {
                         const isHighlighted = idx === currentSentenceIdx;
                         const words = sentence.split(/(\s+)/);
-                        const wordCount = words.filter(w => w.trim().length > 0).length;
-                        const activeWordIdx = isHighlighted ? Math.floor(wordCount * sentenceProgress) : -1;
+                        const wordTokens = words.filter(w => w.trim().length > 0);
+                        const totalChars = wordTokens.reduce((sum, w) => sum + w.length, 0) || 1;
+
+                        // Build cumulative char-proportion thresholds — longer words get more time
+                        let cumChars = 0;
+                        const wordThresholds = wordTokens.map(w => {
+                            cumChars += w.length;
+                            return cumChars / totalChars;
+                        });
+
+                        let activeWordIdx = -1;
+                        if (isHighlighted) {
+                            const found = wordThresholds.findIndex(t => t > sentenceProgress);
+                            activeWordIdx = found === -1 ? wordTokens.length - 1 : found;
+                        }
                         let currentWordCount = 0;
 
                         const wordElements = words.map((chunk, chunkIdx) => {
@@ -699,7 +706,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
 
                     {/* Voice Selection Dropdown */}
                     <div className={`p-voice-dropdown ${isDropdownOpen ? 'open' : ''}`}>
-                        {(['onyx', 'echo', 'nova', 'shimmer'] as TTSVoice[]).map(v => (
+                        {(['onyx', 'echo', 'fable', 'nova', 'shimmer', 'alloy'] as TTSVoice[]).map(v => (
                             <div
                                 key={v}
                                 className={`p-vopt ${voiceUI === v ? 'sel' : ''}`}
