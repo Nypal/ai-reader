@@ -16,10 +16,14 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Setup cache directory
-const CACHE_DIR = path.join(__dirname, 'tts-cache');
+// Setup cache directory — override with TTS_CACHE_DIR env var in production
+// to point at a persistent volume (e.g. /data/tts-cache on Railway/Render).
+const CACHE_DIR = process.env.TTS_CACHE_DIR || path.join(__dirname, 'tts-cache');
 if (!fs.existsSync(CACHE_DIR)) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+if (!process.env.TTS_CACHE_DIR && process.env.NODE_ENV === 'production') {
+    console.warn('[TTS Cache] WARNING: TTS_CACHE_DIR is not set. Cache will be lost on redeploy. Set TTS_CACHE_DIR to a persistent volume path.');
 }
 
 // LRU disk cache eviction — keep at most MAX_CACHE_FILES MP3s.
@@ -56,6 +60,15 @@ const ttsLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 20,
     message: { error: 'Too many TTS requests, please try again later.' },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+});
+
+// Rate Limiter for AI endpoints (quiz / feynman)
+const aiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    message: { error: 'Too many AI requests, please try again later.' },
     standardHeaders: 'draft-7',
     legacyHeaders: false,
 });
@@ -298,10 +311,10 @@ Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":[".
     }
 };
 
-app.post('/api/quiz', generateQuiz);
-app.post('/api/questions', generateQuiz);
+app.post('/api/quiz', aiLimiter, generateQuiz);
+app.post('/api/questions', aiLimiter, generateQuiz);
 
-app.post('/api/feynman', async (req, res) => {
+app.post('/api/feynman', aiLimiter, async (req, res) => {
     try {
         const { explanation, originalText } = req.body;
         if (!originalText || !explanation) return res.status(400).json({ error: 'originalText and explanation are required' });
