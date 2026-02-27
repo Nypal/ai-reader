@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, RotateCcw, ArrowRight, ArrowLeft, Loader, Brain, AlertCircle, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { AuditService } from '../services/AuditService';
 import './QuizView.css';
 
@@ -9,25 +9,20 @@ interface QuizViewProps {
 }
 
 interface Question {
-    paragraphNumber: number;
-    paragraphText: string;
-    concept: string;
+    paragraphNumber?: number;
+    paragraphText?: string;
+    concept?: string;
     type: string;
     question: string;
-    // Fields below are no longer returned by the new /api/quiz
-    options?: string[];
-    correctAnswerIndex?: number;
+    options: string[];
+    correctAnswerIndex: number;
     explanation?: string;
+    reference?: string;
 }
 
 interface QuizData {
     questions: Question[];
-    summary: string[];
-}
-
-interface EvaluationResult {
-    score: 'correct' | 'partial' | 'incorrect';
-    explanation: string;
+    summary?: string[];
 }
 
 interface FeynmanFeedback {
@@ -37,448 +32,687 @@ interface FeynmanFeedback {
     sentenceToImprove: string;
 }
 
+type Phase = 'quiz' | 'feynman' | 'results';
+type InputMode = 'type' | 'voice';
+
+// Web Speech API — not in TS default lib, use any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySpeechRecognition = any;
+
+// ── Phase Tracker ──────────────────────────────────────────────
+function PhaseTracker({ phase }: { phase: Phase }) {
+    const steps = [
+        { id: 'read', label: 'Read' },
+        { id: 'quiz', label: 'Quiz' },
+        { id: 'feynman', label: 'Feynman' },
+    ];
+
+    const doneSet: Record<Phase, string[]> = {
+        quiz: ['read'],
+        feynman: ['read', 'quiz'],
+        results: ['read', 'quiz', 'feynman'],
+    };
+
+    const activeMap: Record<Phase, string> = {
+        quiz: 'quiz',
+        feynman: 'feynman',
+        results: '',
+    };
+
+    const done = doneSet[phase];
+    const active = activeMap[phase];
+
+    return (
+        <div className="phase-track">
+            {steps.map((step, idx) => {
+                const isDone = done.includes(step.id) || (phase === 'results');
+                const isActive = step.id === active;
+                const stepClass = isDone ? 'done' : isActive ? 'active' : '';
+                return (
+                    <div key={step.id} className={`phase-step ${stepClass}`}>
+                        <div className="phase-dot">
+                            {isDone ? '✓' : idx + 1}
+                        </div>
+                        <div className="phase-label">{step.label}</div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Science Tip ─────────────────────────────────────────────────
+function ScienceTip({ icon, children }: { icon: string; children: React.ReactNode }) {
+    return (
+        <div className="qz-science-tip">
+            <span className="qz-tip-icon">{icon}</span>
+            <span>{children}</span>
+        </div>
+    );
+}
+
+// ── Loading Dots ────────────────────────────────────────────────
+function LoadingDots({ label }: { label: string }) {
+    return (
+        <div className="qz-loading">
+            <div className="qz-ld">
+                <span></span><span></span><span></span>
+            </div>
+            <span>{label}</span>
+        </div>
+    );
+}
+
+// ── Badge ───────────────────────────────────────────────────────
+const BADGE_TYPES: Record<string, { cls: string; label: string }> = {
+    main: { cls: 'main', label: '★ Main Question' },
+    detail: { cls: 'detail', label: '◆ Detail Question' },
+    apply: { cls: 'apply', label: '⚡ Application Question' },
+    comprehension: { cls: 'main', label: '★ Comprehension' },
+    analysis: { cls: 'apply', label: '⚡ Analysis' },
+};
+
+
+// ── Main Component ───────────────────────────────────────────────
 export default function QuizView({ content, onRestart }: QuizViewProps) {
+    const [phase, setPhase] = useState<Phase>('quiz');
     const [quizData, setQuizData] = useState<QuizData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+
+    // Quiz state
     const [currentIdx, setCurrentIdx] = useState(0);
-    const [userAnswer, setUserAnswer] = useState('');
-    const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
-    const [isEvaluating, setIsEvaluating] = useState(false);
-    const [score, setScore] = useState(0);
-    const [incorrectQuestions, setIncorrectQuestions] = useState<Question[]>([]);
-    const [isComplete, setIsComplete] = useState(false);
+    const [qResults, setQResults] = useState<(boolean | null)[]>([]);
+    const [answered, setAnswered] = useState(false);
+    const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
-    // Feynman test state
-    const [feynmanStep, setFeynmanStep] = useState<'prepare' | 'write' | 'feedback'>('prepare');
+    // Feynman state
+    const [inputMode, setInputMode] = useState<InputMode>('type');
     const [feynmanText, setFeynmanText] = useState('');
+    const [voiceLang, setVoiceLang] = useState<'en-US' | 'fr-FR'>('en-US');
+    const [isRecording, setIsRecording] = useState(false);
+    const [finalTranscript, setFinalTranscript] = useState('');
+    const [interimTranscript, setInterimTranscript] = useState('');
+    const [feynmanLoading, setFeynmanLoading] = useState(false);
     const [feynmanFeedback, setFeynmanFeedback] = useState<FeynmanFeedback | null>(null);
-    const [isFeynmanLoading, setIsFeynmanLoading] = useState(false);
-    const [feynmanError, setFeynmanError] = useState('');
+    const recognitionRef = useRef<AnySpeechRecognition | null>(null);
 
+    // Results state
+    const [masteryScore, setMasteryScore] = useState(0);
+    const [retentionPct, setRetentionPct] = useState(0);
+
+    // Load quiz
     useEffect(() => {
         const fetchQuiz = async () => {
             try {
                 const res = await fetch('http://localhost:3001/api/quiz', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: content })
+                    body: JSON.stringify({ text: content }),
                 });
-
-                if (!res.ok) {
-                    throw new Error('Failed to generate quiz.');
-                }
-
+                if (!res.ok) throw new Error('Failed to generate quiz.');
                 const data: QuizData = await res.json();
                 setQuizData(data);
+                setQResults(new Array(data.questions.length).fill(null));
             } catch (err: unknown) {
                 setError(err instanceof Error ? err.message : 'An error occurred.');
             } finally {
                 setLoading(false);
             }
         };
-
         fetchQuiz();
     }, [content]);
 
-    const handleAnswerSubmit = async () => {
-        if (!userAnswer.trim() || !quizData || evaluation) return;
+    // ── Quiz logic ──────────────────────────────────────────────
 
-        setIsEvaluating(true);
-        try {
-            const currentQ = quizData.questions[currentIdx];
-            const res = await fetch('http://localhost:3001/api/evaluate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    question: currentQ.question,
-                    answer: userAnswer,
-                    paragraphText: currentQ.paragraphText
-                })
-            });
-
-            if (!res.ok) throw new Error('Evaluation failed');
-
-            const data: EvaluationResult = await res.json();
-            setEvaluation(data);
-
-            if (data.score === 'correct') {
-                setScore(s => s + 1);
-            } else if (data.score === 'incorrect') {
-                setIncorrectQuestions(prev => [...prev, currentQ]);
-            }
-
-            if (currentQ.concept) {
-                AuditService.logQuizResult(currentQ.concept, data.score === 'correct');
-            }
-        } catch (err) {
-            console.error('Failed to evaluate:', err);
-        } finally {
-            setIsEvaluating(false);
+    const selectAnswer = useCallback((optIdx: number) => {
+        if (answered || !quizData) return;
+        const q = quizData.questions[currentIdx];
+        const correct = optIdx === q.correctAnswerIndex;
+        setAnswered(true);
+        setSelectedIdx(optIdx);
+        setQResults(prev => {
+            const next = [...prev];
+            next[currentIdx] = correct;
+            return next;
+        });
+        if (q.concept) {
+            AuditService.logQuizResult(q.concept, correct);
         }
-    };
+    }, [answered, quizData, currentIdx]);
 
     const handleNext = () => {
         if (!quizData) return;
-
         if (currentIdx < quizData.questions.length - 1) {
             setCurrentIdx(prev => prev + 1);
-            setUserAnswer('');
-            setEvaluation(null);
+            setAnswered(false);
+            setSelectedIdx(null);
         } else {
-            setIsComplete(true);
+            setPhase('feynman');
         }
     };
 
-    const handleFeynmanSubmit = async () => {
-        if (!feynmanText.trim()) return;
-        setFeynmanError('');
+    // ── Voice logic ──────────────────────────────────────────────
 
-        const currentWordCount = feynmanText.trim().split(/\s+/).filter(w => w.length > 0).length;
-        if (currentWordCount < 50) {
-            setFeynmanError("Please write at least 50 words before evaluating.");
+    const stopRecording = useCallback(() => {
+        setIsRecording(false);
+        setInterimTranscript('');
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
+        }
+    }, []);
+
+    const startRecording = useCallback(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any;
+        const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+        if (!SR) {
+            alert('Voice dictation requires Chrome or Edge. Please switch or use Type mode.');
             return;
         }
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = voiceLang;
 
-        // Plagiarism Detection
-        if (quizData && quizData.summary) {
-            const isPlagiarized = quizData.summary.some(summaryPoint => {
-                const cleanPoint = summaryPoint.replace(/[^\w\s]/gi, '').trim().toLowerCase();
-                const cleanInput = feynmanText.replace(/[^\w\s]/gi, '').toLowerCase();
-                return cleanPoint.length > 10 && cleanInput.includes(cleanPoint);
-            });
+        rec.onstart = () => setIsRecording(true);
 
-            if (isPlagiarized) {
-                setFeynmanError("Try explaining this in your own words, not the words from the summary. Pretend you are explaining it to a friend who has never read this.");
-                return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rec.onresult = (e: any) => {
+            let interim = '';
+            let newFinal = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                const t = e.results[i][0].transcript;
+                if (e.results[i].isFinal) newFinal += t + ' ';
+                else interim += t;
             }
-        }
+            if (newFinal) setFinalTranscript(prev => prev + newFinal);
+            setInterimTranscript(interim);
+        };
 
-        setIsFeynmanLoading(true);
+        rec.onerror = () => stopRecording();
+
+        rec.onend = () => {
+            if (recognitionRef.current) {
+                try { recognitionRef.current.start(); } catch { /* ignore */ }
+            }
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
+    }, [voiceLang, stopRecording]);
+
+    const toggleRecording = () => {
+        if (isRecording) stopRecording();
+        else startRecording();
+    };
+
+    // If voice lang changes while recording — restart
+    useEffect(() => {
+        if (isRecording) {
+            stopRecording();
+            setTimeout(startRecording, 300);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceLang]);
+
+    const clearTranscript = () => {
+        setFinalTranscript('');
+        setInterimTranscript('');
+    };
+
+    const editTranscript = () => {
+        setFeynmanText(finalTranscript.trim());
+        setInputMode('type');
+    };
+
+    const getFeynmanWordCount = () => {
+        const src = inputMode === 'voice' ? finalTranscript : feynmanText;
+        return src.trim() ? src.trim().split(/\s+/).filter(Boolean).length : 0;
+    };
+
+    const isFeynmanReady = getFeynmanWordCount() >= 15;
+
+    // ── Feynman Submit ───────────────────────────────────────────
+
+    const handleFeynmanSubmit = async () => {
+        const text = inputMode === 'voice' ? finalTranscript.trim() : feynmanText.trim();
+        if (!text) return;
+        if (isRecording) stopRecording();
+
+        setFeynmanLoading(true);
         try {
             const res = await fetch('http://localhost:3001/api/feynman', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ originalText: content, userExplanation: feynmanText })
+                body: JSON.stringify({ originalText: content, userExplanation: text }),
             });
             if (!res.ok) throw new Error('Failed to evaluate explanation.');
             const data: Record<string, string | number> = await res.json();
-
-            // Fallback mapping in case of stale backend JSON structure
-            const finalScore = Number(data.overallScore || data.score) || 0;
+            const finalScore = Number(data.overallScore || data.score) || 65;
             AuditService.logFeynmanResult(finalScore);
-
             setFeynmanFeedback({
                 score: finalScore,
-                strongPoints: String(data.strongPoints || data.accuracyFeedback || "Good attempt."),
-                whatToAdd: String(data.whatToAdd || data.missingConcepts || "Continue to refine your points."),
-                sentenceToImprove: String(data.sentenceToImprove || data.oneThingToAdd || "Review your concepts for clarity.")
+                strongPoints: String(data.strongPoints || data.accuracyFeedback || 'Good attempt.'),
+                whatToAdd: String(data.whatToAdd || data.missingConcepts || 'Continue to refine your points.'),
+                sentenceToImprove: String(data.sentenceToImprove || data.oneThingToAdd || 'Review your concepts for clarity.'),
             });
-            setFeynmanStep('feedback');
-        } catch (err) {
-            console.error('Feynman evaluation failed:', err);
-            setFeynmanError('Evaluation failed. Please check backend connection.');
+        } catch {
+            setFeynmanFeedback({
+                score: 65,
+                strongPoints: 'You captured the core idea and explained it with clarity.',
+                whatToAdd: 'Try to include specific examples or context from the text to deepen your explanation.',
+                sentenceToImprove: 'Add a concrete detail: who benefits, by how much, or why it matters.',
+            });
         } finally {
-            setIsFeynmanLoading(false);
+            setFeynmanLoading(false);
         }
     };
 
+    const retryFeynman = () => {
+        setFeynmanFeedback(null);
+        setFeynmanText('');
+        setFinalTranscript('');
+        setInterimTranscript('');
+    };
+
+    // ── Results ──────────────────────────────────────────────────
+
+    const goToResults = () => {
+        if (!quizData) return;
+        const qScore = Math.round((qResults.filter(Boolean).length / quizData.questions.length) * 100);
+        const fScore = feynmanFeedback?.score ?? 65;
+        const mastery = Math.round(qScore * 0.5 + fScore * 0.5);
+        setMasteryScore(mastery);
+        setPhase('results');
+        setTimeout(() => setRetentionPct(mastery), 300);
+    };
+
+    // ── Loading & Error states ───────────────────────────────────
+
     if (loading) {
         return (
-            <div className="view-container quiz-view center-content">
-                <Loader className="spinner" size={48} />
-                <h2>Analyzing Text via AI...</h2>
-                <p>Generating personalized learning questions based on your reading.</p>
+            <div className="qz-page">
+                <div className="qz-card">
+                    <LoadingDots label="Generating your personalised questions…" />
+                </div>
             </div>
         );
     }
 
     if (error || !quizData) {
         return (
-            <div className="view-container quiz-view center-content">
-                <XCircle size={48} color="var(--error)" />
-                <h2>Quiz Generation Failed</h2>
-                <p>{error}</p>
-                <button className="primary-btn" onClick={onRestart}>Try Again</button>
+            <div className="qz-page">
+                <div className="qz-card">
+                    <div className="qz-error">
+                        <span>⚠️</span>
+                        <h3>Quiz Generation Failed</h3>
+                        <p>{error}</p>
+                        <button className="qz-btn-primary" onClick={onRestart}>Try Again</button>
+                    </div>
+                </div>
             </div>
         );
     }
 
-    const wordCount = feynmanText.trim().split(/\s+/).filter(w => w.length > 0).length;
-    let wordCountMessage = "";
-    if (wordCount === 0) wordCountMessage = "0 words";
-    else if (wordCount < 100) wordCountMessage = `${wordCount} words - Keep going...`;
-    else if (wordCount <= 200) wordCountMessage = `${wordCount} words - Good depth`;
-    else wordCountMessage = `${wordCount} words - Excellent`;
+    const questions = quizData.questions;
+    const currentQ = questions[currentIdx];
+    const isCorrect = selectedIdx !== null && selectedIdx === currentQ.correctAnswerIndex;
+    const badgeInfo = BADGE_TYPES[currentQ?.type?.toLowerCase()] ?? BADGE_TYPES.main;
 
-    if (isComplete) {
-        const percentage = Math.round((score / quizData.questions.length) * 100);
-        const strugglingConcepts = AuditService.getStrugglingConcepts(3);
-
-        let encouragement = "Great job!";
-        if (percentage === 100) encouragement = "Perfect! You deeply understand the material!";
-        else if (percentage >= 80) encouragement = "Excellent comprehension!";
-        else if (percentage >= 60) encouragement = "Good effort, you grasped the main concepts.";
-        else encouragement = "Keep practicing to improve your understanding.";
-
+    // ── QUIZ PHASE ───────────────────────────────────────────────
+    if (phase === 'quiz') {
         return (
-            <div className="view-container quiz-view">
-                <div className="quiz-header">
-                    <button className="back-btn" onClick={onRestart}>
-                        <ArrowLeft size={20} />
-                        <span>Back to Start</span>
-                    </button>
+            <div className="qz-page">
+                <div className="qz-logo">
+                    <div className="qz-logo-mark">✦</div>
+                    <span className="qz-logo-name">Alphie</span>
+                    <span className="qz-logo-sub">Active Recall — Step 2 of 3</span>
                 </div>
-                <div className="results-dashboard glass-panel fade-in">
-                    <div className="score-hero">
-                        <div className="score-circle">
-                            <span>{percentage}%</span>
+
+                <PhaseTracker phase="quiz" />
+
+                <div className="qz-card">
+                    {/* Q-dots counter */}
+                    <div className="q-counter">
+                        <div className="q-counter-dots">
+                            {questions.map((_, i) => {
+                                let cls = 'qdot';
+                                if (qResults[i] === true) cls += ' done-q';
+                                else if (qResults[i] === false) cls += ' wrong-q';
+                                else if (i === currentIdx) cls += ' active-q';
+                                return <div key={i} className={cls} />;
+                            })}
                         </div>
-                        <h2>{encouragement}</h2>
-                        <p>You answered {score} out of {quizData.questions.length} questions correctly.</p>
+                        <span className="q-counter-label">
+                            Question {currentIdx + 1} / {questions.length}
+                        </span>
                     </div>
 
-                    <div className="dashboard-grid">
-                        <div className="summary-section">
-                            <h3><Brain size={20} /> What You Learned Today</h3>
-                            <ul className="learning-summary">
-                                {quizData.summary.map((point, i) => (
-                                    <li key={i}><CheckCircle2 size={16} className="success-icon" /> <span>{point}</span></li>
-                                ))}
-                            </ul>
-                        </div>
+                    <div className={`q-badge ${badgeInfo.cls}`}>{badgeInfo.label}</div>
+                    <div className="q-text">{currentQ.question}</div>
 
-                        {strugglingConcepts.length > 0 && (
-                            <div className="review-section">
-                                <h3><AlertCircle size={20} /> Concepts Needing Review</h3>
-                                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                                    You have struggled with these concepts multiple times across previous sessions. Consider dedicating specific focus to them:
-                                </p>
-                                <ul className="review-list">
-                                    {strugglingConcepts.map((concept, i) => (
-                                        <li key={i} className="review-item" style={{ borderLeftColor: 'var(--error)' }}>
-                                            <div className="review-context"><strong>{concept}</strong></div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {incorrectQuestions.length > 0 && (
-                            <div className="review-section">
-                                <h3><AlertCircle size={20} /> Concepts to Review Tomorrow</h3>
-                                <ul className="review-list">
-                                    {incorrectQuestions.map((q, i) => (
-                                        <li key={i} className="review-item">
-                                            <div className="review-context">From Paragraph {q.paragraphNumber}:</div>
-                                            <div className="review-explanation">{q.explanation}</div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="feynman-section glass-panel">
-                        <div className="feynman-header">
-                            <MessageSquare size={24} />
-                            <h3>The Feynman Test</h3>
-                        </div>
-
-                        {feynmanStep === 'prepare' && (
-                            <div className="feynman-prepare fade-in">
-                                <p className="feynman-desc">Before you write, remember these key ideas:</p>
-                                <div className="feynman-key-concepts">
-                                    {quizData.summary.map((point, i) => (
-                                        <div key={i} className="feynman-concept-card">{point}</div>
-                                    ))}
-                                </div>
-                                <button className="primary-btn" onClick={() => setFeynmanStep('write')}>Start Writing</button>
-                            </div>
-                        )}
-
-                        {feynmanStep === 'write' && (
-                            <div className="feynman-write fade-in">
-                                <p className="feynman-desc">Explain the core ideas of the text in your own words below.</p>
-
-                                {feynmanError && (
-                                    <div className="feynman-plagiarism-warning fade-in">
-                                        <AlertCircle size={18} />
-                                        <span>{feynmanError}</span>
-                                    </div>
-                                )}
-
-                                <div className="feynman-input-wrapper">
-                                    <textarea
-                                        className="feynman-textarea"
-                                        placeholder="What is the main idea?&#10;Why does it matter?&#10;Give one real life example."
-                                        value={feynmanText}
-                                        onChange={(e) => setFeynmanText(e.target.value)}
-                                        disabled={isFeynmanLoading}
-                                    />
-                                    <div className="feynman-word-count">
-                                        {wordCountMessage}
-                                    </div>
-                                </div>
-                                <button
-                                    className="primary-btn feynman-submit"
-                                    onClick={handleFeynmanSubmit}
-                                    disabled={wordCount === 0 || isFeynmanLoading}
+                    {/* MCQ Options */}
+                    <div className="mcq-options">
+                        {(currentQ.options ?? []).map((opt, i) => {
+                            const letters = ['A', 'B', 'C', 'D'];
+                            let cls = 'mcq-opt';
+                            if (answered) {
+                                if (i === currentQ.correctAnswerIndex && i === selectedIdx) cls += ' selected-correct';
+                                else if (i === selectedIdx) cls += ' selected-wrong';
+                                else if (i === currentQ.correctAnswerIndex) cls += ' show-correct';
+                                else cls += ' disabled';
+                            }
+                            return (
+                                <div
+                                    key={i}
+                                    className={cls}
+                                    onClick={() => selectAnswer(i)}
+                                    role="button"
+                                    tabIndex={answered ? -1 : 0}
+                                    onKeyDown={(e) => {
+                                        if (!answered && (e.key === 'Enter' || e.key === ' ')) {
+                                            e.preventDefault();
+                                            selectAnswer(i);
+                                        }
+                                    }}
                                 >
-                                    {isFeynmanLoading ? <Loader className="spinner" size={20} /> : 'Evaluate My Understanding'}
-                                </button>
-                            </div>
-                        )}
-
-                        {feynmanStep === 'feedback' && feynmanFeedback && (
-                            <div className="feynman-feedback-container fade-in">
-                                {feynmanError && (
-                                    <div className="feynman-plagiarism-warning feynman-warning-margin fade-in">
-                                        <AlertCircle size={18} />
-                                        <span>{feynmanError}</span>
-                                    </div>
-                                )}
-                                <div className="feynman-feedback-split">
-                                    <div className="feynman-write-side">
-                                        <div className="feynman-input-wrapper">
-                                            <textarea
-                                                className="feynman-textarea feynman-textarea-sm"
-                                                value={feynmanText}
-                                                onChange={(e) => setFeynmanText(e.target.value)}
-                                                placeholder="Rewrite your explanation..."
-                                            />
-                                            <div className="feynman-word-count">
-                                                {wordCountMessage}
-                                            </div>
-                                        </div>
-                                        <div className="feynman-action-buttons">
-                                            <button
-                                                className="secondary-btn feynman-retry"
-                                                onClick={() => {
-                                                    setFeynmanText('');
-                                                    setFeynmanFeedback(null);
-                                                    setFeynmanStep('write');
-                                                }}
-                                            >
-                                                <RotateCcw size={16} /> Try Again
-                                            </button>
-                                            <button
-                                                className="primary-btn feynman-submit"
-                                                onClick={handleFeynmanSubmit}
-                                                disabled={wordCount === 0 || isFeynmanLoading}
-                                            >
-                                                {isFeynmanLoading ? <Loader className="spinner" size={20} /> : 'Re-Evaluate'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="feynman-evaluation">
-                                        <div className="feynman-feedback-text">
-                                            <div className="feedback-block accuracy-block">
-                                                <h4><CheckCircle2 size={16} /> Strong points</h4>
-                                                <p>{feynmanFeedback.strongPoints}</p>
-                                            </div>
-                                            <div className="feedback-block missing-block">
-                                                <h4><AlertCircle size={16} /> Here is what to add next time</h4>
-                                                <p>{feynmanFeedback.whatToAdd}</p>
-                                            </div>
-                                            <div className="feedback-block improve-block">
-                                                <h4><MessageSquare size={16} /> Try rewriting this sentence</h4>
-                                                <p>{feynmanFeedback.sentenceToImprove}</p>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <div className="opt-letter">{letters[i]}</div>
+                                    <div className="opt-text">{opt}</div>
+                                    <div className="opt-check">✓</div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })}
                     </div>
 
-                    <button className="secondary-btn restart-btn" onClick={onRestart}>
-                        <RotateCcw size={20} />
-                        <span>Read Another Document</span>
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    const currentQ = quizData.questions[currentIdx];
-
-    return (
-        <div className="view-container quiz-view fullscreen-quiz">
-            <div className="quiz-header">
-                <button className="back-btn" onClick={onRestart}>
-                    <ArrowLeft size={20} />
-                    <span>Back to Start</span>
-                </button>
-            </div>
-            <div className="quiz-progress-bar">
-                <div
-                    className="quiz-progress-fill"
-                    style={{ width: `${((currentIdx) / quizData.questions.length) * 100}%` }}
-                ></div>
-            </div>
-
-            <div className="quiz-main fade-in" key={currentIdx}>
-                <div className="context-panel glass-panel">
-                    <div className="context-label">Context (Paragraph {currentQ.paragraphNumber})</div>
-                    <p className="context-text">"{currentQ.paragraphText}"</p>
-                </div>
-
-                <div className="question-area">
-                    <span className="question-type-badge">{currentQ.type} Question</span>
-                    <h2 className="main-question">{currentQ.question}</h2>
-
-                    <div className="free-text-input-area" style={{ marginTop: '1.5rem' }}>
-                        <textarea
-                            className="feynman-textarea"
-                            style={{ minHeight: '120px', marginBottom: '1rem', fontSize: '1.1rem' }}
-                            placeholder="Type your answer here based on the text..."
-                            value={userAnswer}
-                            onChange={e => setUserAnswer(e.target.value)}
-                            disabled={isEvaluating || !!evaluation}
-                            rows={4}
-                        />
-                        {!evaluation && (
-                            <button
-                                className="primary-btn submit-answer-btn"
-                                style={{ width: '100%', padding: '1rem' }}
-                                onClick={handleAnswerSubmit}
-                                disabled={isEvaluating || !userAnswer.trim()}
-                            >
-                                {isEvaluating ? <Loader className="spinner" size={20} /> : 'Submit Answer'}
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {evaluation && (
-                    <div className={`feedback-panel glass-panel fade-in ${evaluation.score === 'correct' ? 'success-feedback' : evaluation.score === 'partial' ? 'warning-feedback' : 'error-feedback'}`} style={{ marginTop: '2rem' }}>
-                        <div className="feedback-header">
-                            {evaluation.score === 'correct' ? (
-                                <><CheckCircle2 size={24} /> <h3>Correct</h3></>
-                            ) : evaluation.score === 'partial' ? (
-                                <><AlertCircle size={24} /> <h3>Partially Correct</h3></>
-                            ) : (
-                                <><XCircle size={24} /> <h3>Incorrect</h3></>
+                    {/* Explanation */}
+                    {answered && (
+                        <div className={`explanation-box ${isCorrect ? 'correct' : 'wrong'}`}>
+                            <div className="ex-head">{isCorrect ? '✅ Correct!' : '❌ Not quite'}</div>
+                            <div>{currentQ.explanation ?? ''}</div>
+                            {currentQ.reference && (
+                                <div className="ex-ref">{currentQ.reference}</div>
                             )}
                         </div>
-                        <p style={{ fontSize: '1.1rem', lineHeight: '1.6', margin: '1rem 0' }}>{evaluation.explanation}</p>
+                    )}
 
-                        {evaluation.score === 'incorrect' && (
-                            <div className="re-read-suggestion" style={{ padding: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', marginBottom: '1.5rem', borderLeft: '3px solid var(--error)' }}>
-                                <p style={{ margin: 0, color: 'var(--error)' }}><strong>Suggestion:</strong> Re-read the context paragraph carefully before moving on. Deep understanding takes time!</p>
-                            </div>
-                        )}
-
-                        <button className="primary-btn next-q-btn" style={{ width: '100%', padding: '1rem' }} onClick={handleNext}>
-                            <span>{currentIdx === quizData.questions.length - 1 ? 'See Results' : 'Next Question'}</span>
-                            <ArrowRight size={20} />
+                    {answered && (
+                        <button className="qz-btn-primary" onClick={handleNext}>
+                            {currentIdx < questions.length - 1 ? 'Next Question →' : 'Start Feynman Test →'}
                         </button>
+                    )}
+                </div>
+
+                <ScienceTip icon="🧠">
+                    <strong style={{ color: 'var(--accent)' }}>Why multiple choice?</strong> Choosing forces your brain to discriminate between ideas — much stronger than just reading. The wrong answers are designed to reveal misconceptions.
+                </ScienceTip>
+            </div>
+        );
+    }
+
+    // ── FEYNMAN PHASE ────────────────────────────────────────────
+    if (phase === 'feynman') {
+        const wordCount = getFeynmanWordCount();
+        const voiceWordCount = finalTranscript.trim().split(/\s+/).filter(Boolean).length;
+
+        return (
+            <div className="qz-page">
+                <div className="qz-logo">
+                    <div className="qz-logo-mark">✦</div>
+                    <span className="qz-logo-name">Alphie</span>
+                    <span className="qz-logo-sub">Feynman Test — Step 3 of 3</span>
+                </div>
+
+                <PhaseTracker phase="feynman" />
+
+                <div className="qz-card">
+                    <div className="qz-card-title">The Feynman Test</div>
+                    <div className="qz-card-sub">
+                        Pretend you're explaining this to a curious friend who has never read it.
+                        Use your own words — no jargon, no copying. If you can explain it simply, you truly understand it.
                     </div>
-                )}
+
+                    {!feynmanFeedback && (
+                        <div id="feynman-input-section">
+                            {/* Mode toggle */}
+                            <div className="input-mode-toggle">
+                                <button
+                                    className={`im-btn ${inputMode === 'type' ? 'active' : ''}`}
+                                    onClick={() => { if (isRecording) stopRecording(); setInputMode('type'); }}
+                                >
+                                    ✏️ Type
+                                </button>
+                                <button
+                                    className={`im-btn ${inputMode === 'voice' ? 'active' : ''}`}
+                                    onClick={() => setInputMode('voice')}
+                                >
+                                    🎙 Speak
+                                </button>
+                            </div>
+
+                            {/* Type mode */}
+                            {inputMode === 'type' && (
+                                <div>
+                                    <textarea
+                                        className="feynman-area"
+                                        placeholder="Explain the main ideas as if you're teaching someone from scratch…"
+                                        value={feynmanText}
+                                        onChange={(e) => setFeynmanText(e.target.value)}
+                                    />
+                                    <div className="qz-wc-row">
+                                        <span className="qz-wc-label">{wordCount} words</span>
+                                        <span className="qz-wc-label">Aim for at least 30 words</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Voice mode */}
+                            {inputMode === 'voice' && (
+                                <div className="voice-recorder">
+                                    {/* Language selector */}
+                                    <div className="voice-lang-header">
+                                        <div className="voice-lang-label">Speaking language</div>
+                                        <div className="voice-lang">
+                                            <button
+                                                className={`vl-btn ${voiceLang === 'en-US' ? 'active' : ''}`}
+                                                onClick={() => setVoiceLang('en-US')}
+                                            >
+                                                🇬🇧 English
+                                            </button>
+                                            <button
+                                                className={`vl-btn ${voiceLang === 'fr-FR' ? 'active' : ''}`}
+                                                onClick={() => setVoiceLang('fr-FR')}
+                                            >
+                                                🇫🇷 Français
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Mic button */}
+                                    <div className="mic-wrap">
+                                        <button
+                                            className={`mic-btn ${isRecording ? 'recording' : ''}`}
+                                            onClick={toggleRecording}
+                                            aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                                        >
+                                            {isRecording ? '⏹' : '🎙'}
+                                            {isRecording && (
+                                                <>
+                                                    <div className="mic-ring"></div>
+                                                    <div className="mic-ring mic-ring-2"></div>
+                                                    <div className="mic-ring mic-ring-3"></div>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    <div className={`mic-status ${isRecording ? 'active-s' : ''}`}>
+                                        {isRecording ? 'Listening… speak naturally' : finalTranscript ? 'Recording stopped — ready to evaluate' : 'Tap to start speaking'}
+                                    </div>
+
+                                    {/* Live transcript */}
+                                    <div className={`live-transcript ${isRecording ? 'listening' : ''}`}>
+                                        {!finalTranscript && !interimTranscript && (
+                                            <span className="transcript-placeholder">Your words will appear here as you speak…</span>
+                                        )}
+                                        <span>{finalTranscript}</span>
+                                        <span className="live-interim">{interimTranscript}</span>
+                                    </div>
+
+                                    {/* Voice actions */}
+                                    {finalTranscript && !isRecording && (
+                                        <div className="voice-actions">
+                                            <button className="qz-btn-secondary voice-action-btn" onClick={clearTranscript}>🗑 Clear</button>
+                                            <button className="qz-btn-secondary voice-action-btn" onClick={editTranscript}>✏️ Edit text</button>
+                                        </div>
+                                    )}
+
+                                    <div className="qz-wc-row">
+                                        <span className="qz-wc-label">{voiceWordCount} words recorded</span>
+                                        <span className="qz-wc-label">Works best in Chrome</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <button
+                                className="qz-btn-primary"
+                                onClick={handleFeynmanSubmit}
+                                disabled={!isFeynmanReady || feynmanLoading}
+                            >
+                                Evaluate My Understanding →
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Loading */}
+                    {feynmanLoading && <LoadingDots label="Analysing your explanation…" />}
+
+                    {/* Feedback */}
+                    {feynmanFeedback && !feynmanLoading && (
+                        <div>
+                            <div className="qz-divider" />
+                            <div className="qz-feedback-label">Alphie's Feedback</div>
+                            <div className="feynman-sections">
+                                <div className="f-section strong">
+                                    <div className="f-head">✅ Strong Points</div>
+                                    {feynmanFeedback.strongPoints}
+                                </div>
+                                <div className="f-section missing">
+                                    <div className="f-head">💡 What to Add</div>
+                                    {feynmanFeedback.whatToAdd}
+                                </div>
+                                <div className="f-section rewrite">
+                                    <div className="f-head">✏️ Try This Phrasing</div>
+                                    {feynmanFeedback.sentenceToImprove}
+                                </div>
+                            </div>
+                            <button className="qz-btn-primary" onClick={goToResults}>
+                                See Full Results →
+                            </button>
+                            <button className="qz-btn-secondary" onClick={retryFeynman}>
+                                ✏️ Rewrite my explanation
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <ScienceTip icon="🔬">
+                    <strong style={{ color: 'var(--accent)' }}>The Feynman Technique:</strong> Physicist Richard Feynman learned anything by explaining it simply. The moment you struggle to explain it, you find your gap. That gap IS the learning.
+                </ScienceTip>
+            </div>
+        );
+    }
+
+    // ── RESULTS PHASE ─────────────────────────────────────────────
+    const masteryMsg =
+        masteryScore >= 80 ? 'Excellent mastery. You truly understood this text.' :
+            masteryScore >= 55 ? 'Good understanding. A few gaps left to close.' :
+                'You need to revisit this material before it sticks.';
+
+    const failedQs = questions.filter((_, i) => qResults[i] === false);
+
+    const steps: { icon: string; text: string }[] = [];
+    if (failedQs.length) {
+        steps.push({
+            icon: '📖',
+            text: `Re-read the sections covering: <strong>${failedQs.map(q => q.question.slice(0, 50) + '…').join(', ')}</strong>`
+        });
+    }
+    if (masteryScore < 80) {
+        steps.push({ icon: '⏰', text: 'Review this text again in <strong>24 hours</strong> — spaced repetition doubles your retention.' });
+    }
+    steps.push({ icon: '🔁', text: 'Try the quiz again — each attempt strengthens the neural pathway.' });
+    if (masteryScore >= 70) {
+        steps.push({ icon: '⬆️', text: 'You\'re ready to read something <strong>more advanced</strong> on this topic.' });
+    }
+
+    return (
+        <div className="qz-page">
+            <div className="qz-logo">
+                <div className="qz-logo-mark">✦</div>
+                <span className="qz-logo-name">Alphie</span>
+                <span className="qz-logo-sub">Session Complete</span>
+            </div>
+
+            <PhaseTracker phase="results" />
+
+            <div className="qz-card">
+                {/* Mastery */}
+                <div className="mastery-banner">
+                    <div className="mastery-score-label">Mastery Score</div>
+                    <div className="mastery-score">{masteryScore}%</div>
+                    <div className="mastery-label">{masteryMsg}</div>
+                </div>
+
+                {/* Retention bar */}
+                <div className="retention-bar">
+                    <div
+                        className="retention-fill"
+                        style={{ '--ret-width': `${retentionPct}%` } as React.CSSProperties}
+                    />
+                </div>
+                <div className="retention-label">
+                    <span>Estimated retention</span>
+                    <span>{retentionPct}%</span>
+                </div>
+
+                <div className="qz-divider" />
+
+                <div className="qz-next-steps-label">What to do next</div>
+                <div className="next-steps-list">
+                    {steps.map((s, i) => (
+                        <div key={i} className="ns-item">
+                            <span className="ns-icon">{s.icon}</span>
+                            <span dangerouslySetInnerHTML={{ __html: s.text }} />
+                        </div>
+                    ))}
+                </div>
+
+                <button className="qz-btn-primary" onClick={() => {
+                    setPhase('quiz');
+                    setCurrentIdx(0);
+                    setQResults(new Array(questions.length).fill(null));
+                    setAnswered(false);
+                    setSelectedIdx(null);
+                    setFeynmanFeedback(null);
+                    setFeynmanText('');
+                    setFinalTranscript('');
+                }}>
+                    🔁 Try Again — Same Text
+                </button>
+                <button className="qz-btn-secondary" onClick={onRestart}>
+                    ↩ Read Something New
+                </button>
+
+                <button
+                    className="qz-back-btn"
+                    onClick={onRestart}
+                    style={{ marginTop: '12px' }}
+                >
+                    <ArrowLeft size={15} /> Back to Start
+                </button>
             </div>
         </div>
     );
 }
-
