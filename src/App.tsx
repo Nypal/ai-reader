@@ -77,7 +77,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <QuizView content={content} onRestart={handleRestart} onArena={handleGoToArena} />
+              <QuizView content={content} lang={readingLanguage === 'french' ? 'fr' : 'en'} onRestart={handleRestart} onArena={handleGoToArena} />
             </motion.div>
           )}
           {appState === 'arena' && (

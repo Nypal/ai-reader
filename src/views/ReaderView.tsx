@@ -211,7 +211,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ text, voice: voiceRef.current, language: readingLanguage, format: "mp3" }),
+            body: JSON.stringify({ text, voice: voiceRef.current, lang: readingLanguage === 'french' ? 'fr' : 'en' }),
             signal,
         });
 

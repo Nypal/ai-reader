@@ -197,7 +197,7 @@ export default function InputView({ onStart, onArena }: InputViewProps) {
         }
         let audioBlobUrl = '';
         try {
-            const ttsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy' }) });
+            const ttsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy', lang: 'en' }) });
             if (!ttsRes.ok) { const e = await ttsRes.json().catch(() => ({})); throw new Error(e.error || `HTTP ${ttsRes.status}`); }
             const blob = await ttsRes.blob();
             if (blob.size === 0) throw new Error('Empty audio buffer');

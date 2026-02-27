@@ -5,14 +5,12 @@ import './QuizView.css';
 
 interface QuizViewProps {
     content: string;
+    lang?: 'en' | 'fr';
     onRestart: () => void;
     onArena?: () => void;
 }
 
 interface Question {
-    paragraphNumber?: number;
-    paragraphText?: string;
-    concept?: string;
     type: string;
     question: string;
     options: string[];
@@ -28,9 +26,9 @@ interface QuizData {
 
 interface FeynmanFeedback {
     score: number;
-    strongPoints: string;
-    whatToAdd: string;
-    sentenceToImprove: string;
+    strong_points: string;
+    missing_concepts: string;
+    rewrite_suggestion: string;
 }
 
 type Phase = 'quiz' | 'feynman' | 'results';
@@ -115,7 +113,7 @@ const BADGE_TYPES: Record<string, { cls: string; label: string }> = {
 
 
 // ── Main Component ───────────────────────────────────────────────
-export default function QuizView({ content, onRestart, onArena }: QuizViewProps) {
+export default function QuizView({ content, lang = 'en', onRestart, onArena }: QuizViewProps) {
     const [phase, setPhase] = useState<Phase>('quiz');
     const [quizData, setQuizData] = useState<QuizData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -149,10 +147,18 @@ export default function QuizView({ content, onRestart, onArena }: QuizViewProps)
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: content }),
+                    body: JSON.stringify({ text: content, lang }),
                 });
                 if (!res.ok) throw new Error('Failed to generate quiz.');
-                const data: QuizData = await res.json();
+                const raw = await res.json();
+                // Normalize: contract uses `correct`, UI uses `correctAnswerIndex`
+                const data: QuizData = {
+                    ...raw,
+                    questions: (raw.questions ?? []).map((q: Record<string, unknown>) => ({
+                        ...q,
+                        correctAnswerIndex: typeof q.correct === 'number' ? q.correct : (q.correctAnswerIndex ?? 0),
+                    })),
+                };
                 setQuizData(data);
                 setQResults(new Array(data.questions.length).fill(null));
             } catch (err: unknown) {
@@ -177,9 +183,7 @@ export default function QuizView({ content, onRestart, onArena }: QuizViewProps)
             next[currentIdx] = correct;
             return next;
         });
-        if (q.concept) {
-            AuditService.logQuizResult(q.concept, correct);
-        }
+        AuditService.logQuizResult(q.type ?? 'question', correct);
     }, [answered, quizData, currentIdx]);
 
     const handleNext = () => {
@@ -287,24 +291,24 @@ export default function QuizView({ content, onRestart, onArena }: QuizViewProps)
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/feynman`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ originalText: content, userExplanation: text }),
+                body: JSON.stringify({ explanation: text, originalText: content }),
             });
             if (!res.ok) throw new Error('Failed to evaluate explanation.');
             const data: Record<string, string | number> = await res.json();
-            const finalScore = Number(data.overallScore || data.score) || 65;
+            const finalScore = Number(data.score) || 65;
             AuditService.logFeynmanResult(finalScore);
             setFeynmanFeedback({
                 score: finalScore,
-                strongPoints: String(data.strongPoints || data.accuracyFeedback || 'Good attempt.'),
-                whatToAdd: String(data.whatToAdd || data.missingConcepts || 'Continue to refine your points.'),
-                sentenceToImprove: String(data.sentenceToImprove || data.oneThingToAdd || 'Review your concepts for clarity.'),
+                strong_points: String(data.strong_points || 'Good attempt.'),
+                missing_concepts: String(data.missing_concepts || 'Continue to refine your points.'),
+                rewrite_suggestion: String(data.rewrite_suggestion || 'Review your concepts for clarity.'),
             });
         } catch {
             setFeynmanFeedback({
                 score: 65,
-                strongPoints: 'You captured the core idea and explained it with clarity.',
-                whatToAdd: 'Try to include specific examples or context from the text to deepen your explanation.',
-                sentenceToImprove: 'Add a concrete detail: who benefits, by how much, or why it matters.',
+                strong_points: 'You captured the core idea and explained it with clarity.',
+                missing_concepts: 'Try to include specific examples or context from the text to deepen your explanation.',
+                rewrite_suggestion: 'Add a concrete detail: who benefits, by how much, or why it matters.',
             });
         } finally {
             setFeynmanLoading(false);
@@ -597,15 +601,15 @@ export default function QuizView({ content, onRestart, onArena }: QuizViewProps)
                             <div className="feynman-sections">
                                 <div className="f-section strong">
                                     <div className="f-head">✅ Strong Points</div>
-                                    {feynmanFeedback.strongPoints}
+                                    {feynmanFeedback.strong_points}
                                 </div>
                                 <div className="f-section missing">
                                     <div className="f-head">💡 What to Add</div>
-                                    {feynmanFeedback.whatToAdd}
+                                    {feynmanFeedback.missing_concepts}
                                 </div>
                                 <div className="f-section rewrite">
                                     <div className="f-head">✏️ Try This Phrasing</div>
-                                    {feynmanFeedback.sentenceToImprove}
+                                    {feynmanFeedback.rewrite_suggestion}
                                 </div>
                             </div>
                             <button className="qz-btn-primary" onClick={goToResults}>
