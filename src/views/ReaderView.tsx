@@ -407,6 +407,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         try {
             setCurrentSentenceIdx(idx);
             setSentenceProgress(0);
+            a.currentTime = 0;
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;
             console.log(`[PlayLearn] play started idx=${idx} ttfs_ms=${Math.round(nowMs() - t0)}ms`);
@@ -486,6 +487,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     };
 
     const handleSeek = (newIdx: number) => {
+        // Immediately stop current audio so old sentence doesn't keep playing
+        try { audioRef.current?.pause(); } catch { /* ignore */ }
         replayCountRef.current += 1;
         const wasPlaying = playbackState === 'playing' || playbackState === 'loading';
         runIdRef.current += 1;
