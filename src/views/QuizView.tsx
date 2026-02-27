@@ -145,7 +145,7 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
     useEffect(() => {
         const fetchQuiz = async () => {
             try {
-                const res = await fetch('http://localhost:3001/api/quiz', {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: content }),
@@ -283,7 +283,7 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
 
         setFeynmanLoading(true);
         try {
-            const res = await fetch('http://localhost:3001/api/feynman', {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/feynman`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ originalText: content, userExplanation: text }),

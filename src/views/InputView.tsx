@@ -180,7 +180,7 @@ export default function InputView({ onStart }: InputViewProps) {
         setShowTests(true);
         setTestState({ ...initialTestState, backend: { status: 'running' } });
         try {
-            const res = await fetch('http://localhost:3001/api/health');
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/health`);
             if (!res.ok) throw new Error('Bad response');
             const data = await res.json();
             setTestState(prev => ({ ...prev, backend: { status: 'pass' }, openai: { status: 'running' } }));
@@ -196,7 +196,7 @@ export default function InputView({ onStart }: InputViewProps) {
         }
         let audioBlobUrl = '';
         try {
-            const ttsRes = await fetch('http://localhost:3001/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy' }) });
+            const ttsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy' }) });
             if (!ttsRes.ok) { const e = await ttsRes.json().catch(() => ({})); throw new Error(e.error || `HTTP ${ttsRes.status}`); }
             const blob = await ttsRes.blob();
             if (blob.size === 0) throw new Error('Empty audio buffer');

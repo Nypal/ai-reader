@@ -209,7 +209,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     const fetchTts = useCallback(async (text: string, signal: AbortSignal): Promise<{ buf: ArrayBuffer; contentType: string }> => {
         const fetchStartMs = nowMs();
         console.log(`[PlayLearn] fetching TTS for chunk: "${text}"`);
-        const res = await fetch('http://localhost:3001/api/tts', {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ text, voice: voiceRef.current, language: readingLanguage, format: "mp3" }),
