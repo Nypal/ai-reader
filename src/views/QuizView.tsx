@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { AuditService } from '../services/AuditService';
+import type { PrefetchedQuiz } from '../App';
 import './QuizView.css';
 
 interface QuizViewProps {
     content: string;
     lang?: 'en' | 'fr';
+    prefetchedQuiz?: PrefetchedQuiz | null;
     onRestart: () => void;
     onArena?: () => void;
 }
@@ -113,7 +115,21 @@ const BADGE_TYPES: Record<string, { cls: string; label: string }> = {
 
 
 // ── Main Component ───────────────────────────────────────────────
-export default function QuizView({ content, lang = 'en', onRestart, onArena }: QuizViewProps) {
+function normalizeQuizData(raw: unknown): QuizData {
+    const r = raw as Record<string, unknown>;
+    return {
+        ...(r as object),
+        questions: ((r.questions as unknown[]) ?? []).map((q) => {
+            const qr = q as Record<string, unknown>;
+            return {
+                ...qr,
+                correctAnswerIndex: typeof qr.correct === 'number' ? qr.correct : (qr.correctAnswerIndex as number ?? 0),
+            } as Question;
+        }),
+    };
+}
+
+export default function QuizView({ content, lang = 'en', prefetchedQuiz, onRestart, onArena }: QuizViewProps) {
     const [phase, setPhase] = useState<Phase>('quiz');
     const [quizData, setQuizData] = useState<QuizData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -140,8 +156,28 @@ export default function QuizView({ content, lang = 'en', onRestart, onArena }: Q
     const [masteryScore, setMasteryScore] = useState(0);
     const [retentionPct, setRetentionPct] = useState(0);
 
-    // Load quiz
+    // Load quiz — use prefetched result when available, otherwise fetch now.
     useEffect(() => {
+        // Still in flight — stay in loading state until the prefetch resolves.
+        if (prefetchedQuiz?.loading) return;
+
+        // Prefetch completed with data — use it immediately, no extra round-trip.
+        if (prefetchedQuiz?.data) {
+            const data = normalizeQuizData(prefetchedQuiz.data);
+            setQuizData(data);
+            setQResults(new Array(data.questions.length).fill(null));
+            setLoading(false);
+            return;
+        }
+
+        // Prefetch failed — surface the error.
+        if (prefetchedQuiz?.error) {
+            setError(prefetchedQuiz.error);
+            setLoading(false);
+            return;
+        }
+
+        // No prefetch available (e.g. direct navigation) — fetch now.
         const fetchQuiz = async () => {
             try {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
@@ -150,15 +186,7 @@ export default function QuizView({ content, lang = 'en', onRestart, onArena }: Q
                     body: JSON.stringify({ text: content, lang }),
                 });
                 if (!res.ok) throw new Error('Failed to generate quiz.');
-                const raw = await res.json();
-                // Normalize: contract uses `correct`, UI uses `correctAnswerIndex`
-                const data: QuizData = {
-                    ...raw,
-                    questions: (raw.questions ?? []).map((q: Record<string, unknown>) => ({
-                        ...q,
-                        correctAnswerIndex: typeof q.correct === 'number' ? q.correct : (q.correctAnswerIndex ?? 0),
-                    })),
-                };
+                const data = normalizeQuizData(await res.json());
                 setQuizData(data);
                 setQResults(new Array(data.questions.length).fill(null));
             } catch (err: unknown) {
@@ -168,7 +196,7 @@ export default function QuizView({ content, lang = 'en', onRestart, onArena }: Q
             }
         };
         fetchQuiz();
-    }, [content]);
+    }, [content, lang, prefetchedQuiz]);
 
     // ── Quiz logic ──────────────────────────────────────────────
 

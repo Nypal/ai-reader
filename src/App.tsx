@@ -10,11 +10,15 @@ import './App.css';
 
 export type AppState = 'input' | 'reading' | 'quiz' | 'arena';
 
+// Opaque shape — QuizView normalises the fields it cares about.
+export type PrefetchedQuiz = { data?: unknown; error?: string; loading: boolean };
+
 function App() {
   const [appState, setAppState] = useState<AppState>('input');
   const [content, setContent] = useState<string>('');
   const [readingMode, setReadingMode] = useState<'read' | 'learn'>('learn');
   const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
+  const [prefetchedQuiz, setPrefetchedQuiz] = useState<PrefetchedQuiz | null>(null);
 
   const handleStartReading = (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => {
     if (!text.trim()) return;
@@ -22,11 +26,27 @@ function App() {
     setReadingMode(mode);
     setReadingLanguage(language);
     setAppState('reading');
+
+    // Pre-fetch quiz in the background while the user is reading.
+    // By the time they finish listening the questions should be ready.
+    if (mode === 'learn') {
+      const lang = language === 'french' ? 'fr' : 'en';
+      setPrefetchedQuiz({ loading: true });
+      fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang }),
+      })
+        .then(res => res.ok ? res.json() : Promise.reject(new Error(`Quiz API error ${res.status}`)))
+        .then(data => setPrefetchedQuiz({ data, loading: false }))
+        .catch(err => setPrefetchedQuiz({ error: err instanceof Error ? err.message : String(err), loading: false }));
+    }
   };
 
   const handleFinishReading = () => {
     if (readingMode === 'read') {
       setContent('');
+      setPrefetchedQuiz(null);
       setAppState('input');
     } else {
       setAppState('quiz');
@@ -35,6 +55,7 @@ function App() {
 
   const handleRestart = () => {
     setContent('');
+    setPrefetchedQuiz(null);
     setAppState('input');
   };
 
@@ -66,7 +87,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <ReaderView content={content} readingLanguage={readingLanguage} onFinish={handleFinishReading} onBack={() => setAppState('input')} />
+              <ReaderView content={content} readingLanguage={readingLanguage} onFinish={handleFinishReading} onBack={() => { setPrefetchedQuiz(null); setAppState('input'); }} />
             </motion.div>
           )}
           {appState === 'quiz' && (
@@ -77,7 +98,13 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <QuizView content={content} lang={readingLanguage === 'french' ? 'fr' : 'en'} onRestart={handleRestart} onArena={handleGoToArena} />
+              <QuizView
+                content={content}
+                lang={readingLanguage === 'french' ? 'fr' : 'en'}
+                prefetchedQuiz={prefetchedQuiz}
+                onRestart={handleRestart}
+                onArena={handleGoToArena}
+              />
             </motion.div>
           )}
           {appState === 'arena' && (
