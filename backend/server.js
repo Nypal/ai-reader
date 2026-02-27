@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
 import { rateLimit } from 'express-rate-limit';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -21,6 +20,27 @@ const port = process.env.PORT || 3001;
 const CACHE_DIR = path.join(__dirname, 'tts-cache');
 if (!fs.existsSync(CACHE_DIR)) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// LRU disk cache eviction — keep at most MAX_CACHE_FILES MP3s.
+// mtime is used as the LRU timestamp; cache hits touch the file to keep it fresh.
+const MAX_CACHE_FILES = parseInt(process.env.TTS_CACHE_MAX_FILES || '500', 10);
+
+function evictCacheIfNeeded() {
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.mp3'));
+    if (files.length <= MAX_CACHE_FILES) return;
+
+    const entries = files.map(f => {
+        const p = path.join(CACHE_DIR, f);
+        return { p, mtime: fs.statSync(p).mtimeMs };
+    });
+    entries.sort((a, b) => a.mtime - b.mtime); // oldest first
+
+    const toDelete = entries.slice(0, files.length - MAX_CACHE_FILES);
+    for (const { p } of toDelete) {
+        try { fs.unlinkSync(p); } catch { /* ignore race */ }
+    }
+    console.log(`[TTS Cache] Evicted ${toDelete.length} file(s), ${files.length - toDelete.length} remaining.`);
 }
 
 // Global Rate Limiter
@@ -51,9 +71,6 @@ app.use(globalLimiter);
 // Initialize Clients
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
-});
-const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY || 'dummy_key',
 });
 
 // TTS Semaphores
@@ -121,8 +138,7 @@ function normalizeText(text, lang) {
 
 app.get('/api/health', (req, res) => {
     const hasOpenAI = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'dummy_key';
-    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'dummy_key';
-    res.json({ status: 'ok', openaiKeyLoaded: hasOpenAI, anthropicKeyLoaded: hasAnthropic });
+    res.json({ status: 'ok', openaiKeyLoaded: hasOpenAI });
 });
 
 // The Sentence Splitter Endpoint
@@ -201,11 +217,15 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
                 });
                 const buffer = Buffer.from(await mp3.arrayBuffer());
                 fs.writeFileSync(cachePath, buffer);
+                evictCacheIfNeeded();
             } finally {
                 currentTtsJobs--;
             }
         } else {
             console.log(`[TTS] Cache HIT for chunk (${normalizedText.length} chars)`);
+            // Touch mtime so this file survives future LRU eviction
+            const now = new Date();
+            try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
         }
 
         // --- HTTP range request stream ---
@@ -248,22 +268,25 @@ const generateQuiz = async (req, res) => {
     try {
         const { text, lang = 'en' } = req.body;
         if (!text) return res.status(400).json({ error: 'Text is required' });
-        if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Anthropic API key missing in backend/.env' });
+        if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
 
         console.log(`[Quiz] Generating questions for text (${text.length} chars) in lang: ${lang}...`);
 
         const systemPrompt = `Generate exactly 4 multiple choice questions based SOLELY on the user text. Output valid JSON only.
 Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","reference":"..."}]}`;
 
-        const message = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
             max_tokens: 1200,
             temperature: 0.7,
-            system: systemPrompt,
-            messages: [{ role: "user", content: `Language: ${lang}\n\nText:\n${text}` }]
+            response_format: { type: "json_object" },
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Language: ${lang}\n\nText:\n${text}` }
+            ]
         });
 
-        let content = message.content[0].text;
+        let content = completion.choices[0].message.content;
         const jsonMatch = content.match(/```json\n([\s\S]*)\n```/) || content.match(/{[\s\S]*}/);
         if (jsonMatch && jsonMatch[1]) content = jsonMatch[1];
         else if (jsonMatch && jsonMatch[0]) content = jsonMatch[0];
@@ -282,7 +305,7 @@ app.post('/api/feynman', async (req, res) => {
     try {
         const { explanation, originalText } = req.body;
         if (!originalText || !explanation) return res.status(400).json({ error: 'originalText and explanation are required' });
-        if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Anthropic API key missing in backend/.env' });
+        if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
 
         console.log(`[Feynman] Evaluating explanation...`);
 
@@ -296,15 +319,18 @@ You MUST return the output ONLY as valid JSON matching this exact structure, wit
   "score": 85
 }`;
 
-        const message = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
             max_tokens: 1000,
             temperature: 0.7,
-            system: systemPrompt,
-            messages: [{ role: "user", content: `Original Text: ${originalText}\n\nStudent's Explanation: ${explanation}\n\nPlease evaluate.` }]
+            response_format: { type: "json_object" },
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Original Text: ${originalText}\n\nStudent's Explanation: ${explanation}\n\nPlease evaluate.` }
+            ]
         });
 
-        let content = message.content[0].text;
+        let content = completion.choices[0].message.content;
         const jsonMatch = content.match(/```json\n([\s\S]*)\n```/) || content.match(/{[\s\S]*}/);
         if (jsonMatch && jsonMatch[1]) content = jsonMatch[1];
         else if (jsonMatch && jsonMatch[0]) content = jsonMatch[0];
