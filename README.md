@@ -1,5 +1,7 @@
 # Alphie — Read deeply. Learn fully.
 
+**Live at [ai-reader-phi.vercel.app](https://ai-reader-phi.vercel.app)**
+
 An AI-powered reading app that reads your text aloud sentence by sentence, then tests your understanding with a quiz and Feynman test.
 
 ## Features
