@@ -14,7 +14,7 @@ const JUNK_LINE_PATTERNS: RegExp[] = [
     // Reading-time / date stamps ("5 min read", "March 15, 2024", "2 days ago")
     /^\d+\s*(min(ute)?|hour|day|week|month|year)s?\s*(read|ago|left)?\.?$/i,
     /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d/i,
-    /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/,
+    /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/,
     // Bare URLs
     /^https?:\/\//i,
     // Social share counts ("1.2K shares", "47 comments")

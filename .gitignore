@@ -25,3 +25,8 @@ backend/.env
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
+
+# TTS audio cache (generated at runtime, never commit)
+backend/tts-cache/

@@ -2,198 +2,314 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import { rateLimit } from 'express-rate-limit';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Setup cache directory
+const CACHE_DIR = path.join(__dirname, 'tts-cache');
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// Global Rate Limiter
+const globalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 100,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+});
+
+// Strict Rate Limiter for TTS
+const ttsLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    message: { error: 'Too many TTS requests, please try again later.' },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+});
+
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
+app.use(globalLimiter);
 
-// Initialize OpenAI client
+// Initialize Clients
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
 });
+const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY || 'dummy_key',
+});
+
+// TTS Semaphores
+const MAX_CONCURRENT_TTS = 5;
+let currentTtsJobs = 0;
+
+function waitForTtsSlot() {
+    return new Promise(resolve => {
+        const check = () => {
+            if (currentTtsJobs < MAX_CONCURRENT_TTS) {
+                currentTtsJobs++;
+                resolve(null);
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
+}
+
+function normalizeText(text, lang) {
+    let clean = text;
+
+    // Remove URLs, Markdown, and Emails
+    clean = clean.replace(/https?:\/\/[^\s]+/g, '');
+    clean = clean.replace(/www\.[^\s]+/g, '');
+    clean = clean.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig, '');
+    clean = clean.replace(/[*_#>]/g, '');
+
+    if (lang === 'fr') {
+        clean = clean.replace(/\b1er\b/g, "premier");
+        clean = clean.replace(/\b([2-9]|\d{2,})e\b/g, "$1ième"); // very basic expansion
+        clean = clean.replace(/\bM\.\b/g, "Monsieur");
+        clean = clean.replace(/\bMme\b/g, "Madame");
+        clean = clean.replace(/\betc\.\b/g, "et cetera");
+    } else {
+        // English
+        clean = clean.replace(/\bU\.S\.\b/g, "United States");
+        clean = clean.replace(/\bU\.K\.\b/g, "United Kingdom");
+        clean = clean.replace(/\bDr\.\b/g, "Doctor");
+        clean = clean.replace(/\bMr\.\b/g, "Mister");
+        clean = clean.replace(/\bMrs\.\b/g, "Missus");
+        clean = clean.replace(/\bMs\.\b/g, "Miss");
+        clean = clean.replace(/\bvs\.\b/g, "versus");
+        clean = clean.replace(/\betc\.\b/g, "et cetera");
+        clean = clean.replace(/\be\.g\.\b/g, "for example");
+        clean = clean.replace(/\bi\.e\.\b/g, "that is");
+        clean = clean.replace(/\bCorp\.\b/g, "Corporation");
+        clean = clean.replace(/\bInc\.\b/g, "Incorporated");
+
+        // Ordinals & Numbers
+        clean = clean.replace(/\b1st\b/g, "first");
+        clean = clean.replace(/\b2nd\b/g, "second");
+        clean = clean.replace(/\b3rd\b/g, "third");
+        clean = clean.replace(/\$(\d+)[kK]\b/g, "$1 thousand dollars");
+        clean = clean.replace(/\$(\d+)\b/g, "$1 dollars");
+    }
+
+    // SSML Pauses (Simulated using commas/periods since OpenAI TTS respects them)
+    // Replace period+capital with period+space to ensure a hard pause
+    clean = clean.replace(/\.([A-Z])/g, '. $1');
+
+    return clean;
+}
 
 app.get('/api/health', (req, res) => {
-    const hasKey = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here';
-    res.json({
-        status: 'ok',
-        keyLoaded: hasKey
-    });
+    const hasOpenAI = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'dummy_key';
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'dummy_key';
+    res.json({ status: 'ok', openaiKeyLoaded: hasOpenAI, anthropicKeyLoaded: hasAnthropic });
 });
 
-app.post('/api/tts', async (req, res) => {
+// The Sentence Splitter Endpoint
+app.post('/api/sentences', (req, res) => {
     try {
-        const { text, voice = 'alloy', language = 'english' } = req.body;
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ error: 'Text required' });
 
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
+        const abbrevMap = [];
+        const protect = (m) => {
+            const k = `\uE000${abbrevMap.length}\uE001`;
+            abbrevMap.push(m);
+            return k;
+        };
+
+        // Protect known abbreviations
+        let processedText = text
+            .replace(/\b(?:[A-Z]\.){2,}/g, protect)
+            .replace(/\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr)\./g, protect)
+            .replace(/\b(?:vs|etc|approx|est|avg|dept|govt|ref|fig|vol|pp)\./g, protect)
+            .replace(/\be\.g\./g, protect)
+            .replace(/\bi\.e\./g, protect)
+            .replace(/\bet al\./g, protect)
+            .replace(/\b\d+(?:st|nd|rd|th)\./g, protect);
+
+        // Split on standard boundaries followed by space+capital
+        // Also capture just plain boundaries at the end
+        const sentencesProtected = processedText.match(/[^.!?]+[.!?]+(?=\s*[A-Z]|$)/g) || processedText.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [];
+
+        const restoreAbbrevs = (s) => s.replace(/\uE000(\d+)\uE001/g, (_, i) => abbrevMap[parseInt(i)]);
+
+        const finalSentences = sentencesProtected
+            .map(s => restoreAbbrevs(s).trim())
+            // Filter fragments under 3 words
+            .filter(s => s.split(/\s+/).length >= 3);
+
+        res.json({ sentences: finalSentences.length > 0 ? finalSentences : [text.trim()] });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to split sentences' });
+    }
+});
+
+app.post('/api/tts', ttsLimiter, async (req, res) => {
+    try {
+        const { text, voice = 'alloy', lang = 'en' } = req.body;
+
+        if (!text) return res.status(400).json({ error: 'Text is required' });
+        if (text.length > 5000) return res.status(400).json({ error: 'Text exceeds 5000 characters. Please chunk it.' });
+
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
         }
 
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            return res.status(500).json({ error: 'OpenAI API key is missing or invalid in backend/.env' });
+        let finalVoice = voice;
+        if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
+            finalVoice = 'onyx';
         }
 
-        console.log(`Generating ${language} audio for chunk (${text.length} chars) using voice ${voice}...`);
+        const normalizedText = normalizeText(text, lang);
 
-        const mp3 = await openai.audio.speech.create({
-            model: 'tts-1',
-            voice: voice,
-            input: text,
-            response_format: 'mp3',
-        });
+        // Hash for cache key
+        const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
+        const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
 
-        const buffer = Buffer.from(await mp3.arrayBuffer());
+        let audioPath = cachePath;
 
-        res.set({
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': buffer.length,
-            // Provide caching headers so the browser caches identical requests
-            'Cache-Control': 'public, max-age=86400',
-        });
+        if (!fs.existsSync(cachePath)) {
+            console.log(`[TTS] Cache MISS. Generating ${lang} audio for chunk (${normalizedText.length} chars) using voice ${finalVoice}...`);
+            await waitForTtsSlot();
+            try {
+                const mp3 = await openai.audio.speech.create({
+                    model: 'tts-1',
+                    voice: finalVoice,
+                    input: normalizedText,
+                    response_format: 'mp3',
+                });
+                const buffer = Buffer.from(await mp3.arrayBuffer());
+                fs.writeFileSync(cachePath, buffer);
+            } finally {
+                currentTtsJobs--;
+            }
+        } else {
+            console.log(`[TTS] Cache HIT for chunk (${normalizedText.length} chars)`);
+        }
 
-        res.send(buffer);
+        // --- HTTP range request stream ---
+        const stat = fs.statSync(audioPath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+            const file = fs.createReadStream(audioPath, { start, end });
+            const head = {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'audio/mpeg',
+            };
+            res.writeHead(206, head);
+            file.pipe(res);
+        } else {
+            const head = {
+                'Content-Length': fileSize,
+                'Content-Type': 'audio/mpeg',
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'public, max-age=86400',
+            };
+            res.writeHead(200, head);
+            fs.createReadStream(audioPath).pipe(res);
+        }
+
     } catch (error) {
         console.error('TTS Error:', error);
         res.status(500).json({ error: 'Failed to generate audio' });
     }
 });
 
-app.post('/api/quiz', async (req, res) => {
+const generateQuiz = async (req, res) => {
     try {
-        const { text } = req.body;
+        const { text, lang = 'en' } = req.body;
+        if (!text) return res.status(400).json({ error: 'Text is required' });
+        if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Anthropic API key missing in backend/.env' });
 
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
-        }
+        console.log(`[Quiz] Generating questions for text (${text.length} chars) in lang: ${lang}...`);
 
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            return res.status(500).json({ error: 'OpenAI API key is missing or invalid in backend/.env' });
-        }
+        const systemPrompt = `Generate exactly 4 multiple choice questions based SOLELY on the user text. Output valid JSON only.
+Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","reference":"..."}]}`;
 
-        console.log(`Generating quiz for text (${text.length} chars)...`);
-
-        const prompt = `You are an expert educator. Read the provided text.
-Split the text into logical paragraphs.
-For EACH paragraph, generate EXACTLY ONE main question: "What is the main idea of this paragraph?"
-Optionally, you may generate ONE additional supporting question about a key detail if the paragraph is dense.
-Ensure questions are derived SOLELY from the provided text. DO NOT hallucinate or bring in outside information.
-
-You MUST return the output ONLY as valid JSON in this exact structure:
-{
-  "questions": [
-    {
-      "paragraphNumber": 1,
-      "paragraphText": "...",
-      "concept": "...",
-      "type": "Main Idea",
-      "question": "What is the main idea of this paragraph?"
-    }
-  ],
-  "summary": ["...", "...", "..."]
-}
-
-Text to analyze:
-${text}`;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
+        const message = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1200,
             temperature: 0.7,
+            system: systemPrompt,
+            messages: [{ role: "user", content: `Language: ${lang}\n\nText:\n${text}` }]
         });
 
-        let quizData = JSON.parse(completion.choices[0].message.content);
+        let content = message.content[0].text;
+        const jsonMatch = content.match(/```json\n([\s\S]*)\n```/) || content.match(/{[\s\S]*}/);
+        if (jsonMatch && jsonMatch[1]) content = jsonMatch[1];
+        else if (jsonMatch && jsonMatch[0]) content = jsonMatch[0];
 
-        res.json(quizData);
+        res.json(JSON.parse(content));
     } catch (error) {
         console.error('Quiz Generation Error:', error);
         res.status(500).json({ error: 'Failed to generate quiz' });
     }
-});
+};
 
-app.post('/api/evaluate', async (req, res) => {
-    try {
-        const { question, answer, paragraphText } = req.body;
-        if (!question || !answer || !paragraphText) {
-            return res.status(400).json({ error: 'question, answer, and paragraphText are required' });
-        }
-
-        const prompt = `You are an expert educator evaluating a student's answer.
-Read the following paragraph:
-        "${paragraphText}"
-
-The question asked was:
-        "${question}"
-
-The student's answer is:
-        "${answer}"
-
-Evaluate the student's answer based STRICTLY on the paragraph text. Do not use outside knowledge.
-Assess if the answer is "correct", "partial"(partially correct), or "incorrect".
-Provide a short, encouraging 1 - 2 sentence explanation of your evaluation, again based only on the text.
-
-You MUST return the output ONLY as valid JSON in this exact structure:
-        {
-            "score": "correct", // or "partial", or "incorrect"
-                "explanation": "..."
-        } `;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            temperature: 0.3,
-        });
-
-        res.json(JSON.parse(completion.choices[0].message.content));
-    } catch (error) {
-        console.error('Evaluate generation error:', error);
-        res.status(500).json({ error: 'Failed to evaluate answer' });
-    }
-});
+app.post('/api/quiz', generateQuiz);
+app.post('/api/questions', generateQuiz);
 
 app.post('/api/feynman', async (req, res) => {
     try {
-        const { originalText, userExplanation } = req.body;
+        const { explanation, originalText } = req.body;
+        if (!originalText || !explanation) return res.status(400).json({ error: 'originalText and explanation are required' });
+        if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Anthropic API key missing in backend/.env' });
 
-        if (!originalText || !userExplanation) {
-            return res.status(400).json({ error: 'Original text and user explanation are required' });
-        }
+        console.log(`[Feynman] Evaluating explanation...`);
 
-        console.log(`Evaluating Feynman Test...`);
-
-        const prompt = `You are an expert educator acting as a supportive coach for a student taking a Feynman Test.
-Original Text:
-${originalText}
-
-Student's Explanation:
-${userExplanation}
-
-Evaluate how accurately and completely the student explained the main ideas of the original text.Maintain an encouraging, coaching tone.DO NOT judge. 
-You MUST return the output ONLY as valid JSON in this exact structure, using these EXACT keys:
+        const systemPrompt = `You are an expert educator acting as a supportive coach for a student taking a Feynman Test.
+Evaluate how accurately and completely the student explained the main ideas of the original text. Maintain an encouraging tone.
+You MUST return the output ONLY as valid JSON matching this exact structure, with these EXACT keys:
 {
-    "overallScore": 85,
-        "strongPoints": "List specific things the student explained correctly.",
-            "whatToAdd": "List specific concepts they missed that they should add next time.",
-                "sentenceToImprove": "Provide one concrete example sentence the student could use to improve their explanation."
-} `;
+  "strong_points": "List specific things the student explained correctly.",
+  "missing_concepts": "List specific concepts they missed that they should add next time.",
+  "rewrite_suggestion": "Provide one concrete example sentence the student could use to improve their explanation.",
+  "score": 85
+}`;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
+        const message = await anthropic.messages.create({
+            model: "claude-3-5-sonnet-20241022",
+            max_tokens: 1000,
             temperature: 0.7,
+            system: systemPrompt,
+            messages: [{ role: "user", content: `Original Text: ${originalText}\n\nStudent's Explanation: ${explanation}\n\nPlease evaluate.` }]
         });
 
-        const feedbackData = JSON.parse(completion.choices[0].message.content);
-        res.json(feedbackData);
+        let content = message.content[0].text;
+        const jsonMatch = content.match(/```json\n([\s\S]*)\n```/) || content.match(/{[\s\S]*}/);
+        if (jsonMatch && jsonMatch[1]) content = jsonMatch[1];
+        else if (jsonMatch && jsonMatch[0]) content = jsonMatch[0];
+
+        res.json(JSON.parse(content));
     } catch (error) {
         console.error('Feynman Evaluation Error:', error);
         res.status(500).json({ error: 'Failed to evaluate explanation' });
@@ -201,5 +317,5 @@ You MUST return the output ONLY as valid JSON in this exact structure, using the
 });
 
 app.listen(port, () => {
-    console.log(`Backend proxy running on http://localhost:${port}`);
+    console.log(`Backend API running on http://localhost:${port}`);
 });

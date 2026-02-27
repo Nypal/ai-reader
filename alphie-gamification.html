@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alphie — Learning Arena</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #070710;
+  --surface: rgba(255,255,255,0.04);
+  --surface2: rgba(255,255,255,0.07);
+  --border: rgba(255,255,255,0.07);
+  --text: #E8E8F4;
+  --muted: rgba(232,232,244,0.42);
+  --muted2: rgba(232,232,244,0.20);
+  --accent: #7B6EF6;
+  --accent2: #9B8BFF;
+  --accent-dim: rgba(123,110,246,0.12);
+  --accent-glow: rgba(123,110,246,0.3);
+  --gold: #FFD60A;
+  --gold-dim: rgba(255,214,10,0.12);
+  --gold-glow: rgba(255,214,10,0.3);
+  --green: #34C759;
+  --green-dim: rgba(52,199,89,0.10);
+  --orange: #FF9500;
+  --red: #FF453A;
+  --ease: cubic-bezier(0.16,1,0.3,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+body {
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 30% at 50% 0%, rgba(123,110,246,0.09), transparent 60%),
+    radial-gradient(ellipse 30% 20% at 90% 70%, rgba(255,214,10,0.04), transparent 55%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ── TOP HUD ── */
+.hud {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(7,7,16,0.88);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; gap: 16px;
+}
+
+.hud-brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; font-weight: 700;
+  background: linear-gradient(135deg, #F0F0F8, var(--accent));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin-right: 8px;
+}
+
+/* STREAK */
+.streak-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 100px;
+  background: rgba(255,149,0,0.10);
+  border: 1px solid rgba(255,149,0,0.25);
+  font-size: 13px; font-weight: 700; color: var(--orange);
+  cursor: pointer; transition: all 0.2s;
+}
+.streak-pill:hover { background: rgba(255,149,0,0.16); }
+.streak-fire { animation: flicker 1.5s ease-in-out infinite alternate; display: inline-block; }
+@keyframes flicker { from{transform:scale(1) rotate(-3deg)} to{transform:scale(1.1) rotate(3deg)} }
+
+/* XP BAR */
+.xp-section {
+  flex: 1; display: flex; flex-direction: column; gap: 3px;
+}
+.xp-labels {
+  display: flex; justify-content: space-between;
+  font-size: 10px; font-weight: 600; color: var(--muted);
+}
+.xp-bar-wrap {
+  height: 6px; background: var(--surface2);
+  border-radius: 6px; overflow: hidden;
+  position: relative;
+}
+.xp-bar-fill {
+  height: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width 0.8s var(--ease);
+  position: relative;
+}
+.xp-bar-fill::after {
+  content: '';
+  position: absolute; right: 0; top: 0; bottom: 0; width: 8px;
+  background: rgba(255,255,255,0.5);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+/* LEVEL BADGE */
+.level-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--surface); font-size: 12px; font-weight: 700;
+  color: var(--text); cursor: pointer; transition: all 0.2s;
+  white-space: nowrap;
+}
+.level-badge:hover { border-color: var(--accent); }
+
+/* TOTAL XP */
+.total-xp {
+  font-size: 13px; font-weight: 700;
+  color: var(--gold);
+  display: flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+
+/* ── MAIN CONTENT ── */
+.main {
+  position: relative; z-index: 1;
+  max-width: 600px; margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+/* ── SECTION HEADER ── */
+.section-head {
+  margin-bottom: 20px;
+}
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 6px;
+}
+.section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 24px; font-weight: 700; line-height: 1.2;
+}
+.section-sub { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+/* ── DAILY QUEST CARD ── */
+.quest-card {
+  background: linear-gradient(135deg, rgba(123,110,246,0.08), rgba(155,139,255,0.04));
+  border: 1px solid rgba(123,110,246,0.2);
+  border-radius: 18px; padding: 20px;
+  margin-bottom: 16px; position: relative; overflow: hidden;
+}
+.quest-card::before {
+  content: '';
+  position: absolute; top:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+.quest-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.quest-title { font-size: 15px; font-weight: 700; }
+.quest-reward {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 700; color: var(--gold);
+  background: var(--gold-dim); border: 1px solid rgba(255,214,10,0.2);
+  padding: 4px 10px; border-radius: 100px;
+}
+
+.quest-tasks { display: flex; flex-direction: column; gap: 8px; }
+.quest-task {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--muted);
+}
+.qt-check {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--border); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; transition: all 0.3s var(--ease);
+}
+.qt-check.done { background: var(--green); border-color: var(--green); color: white; }
+.quest-task.done-task { color: var(--text); text-decoration: line-through; opacity: 0.6; }
+
+.quest-progress { margin-top: 14px; }
+.qp-label { font-size: 11px; color: var(--muted); margin-bottom: 5px; display: flex; justify-content: space-between; }
+.qp-bar { height: 5px; background: var(--surface2); border-radius: 5px; overflow: hidden; }
+.qp-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.6s var(--ease); }
+
+/* ── ACTION CARDS (simulate quiz/read/feynman) ── */
+.actions-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-bottom: 24px;
+}
+
+.action-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px;
+  cursor: pointer; transition: all 0.22s var(--ease);
+  position: relative; overflow: hidden;
+}
+.action-card::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 80% at 50% 0%, var(--accent-dim), transparent);
+  opacity: 0; transition: opacity 0.25s;
+}
+.action-card:hover {
+  border-color: rgba(123,110,246,0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.action-card:hover::before { opacity: 1; }
+.action-card:active { transform: scale(0.98); }
+
+.ac-icon { font-size: 28px; margin-bottom: 10px; }
+.ac-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+.ac-sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.ac-xp {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: var(--gold);
+  background: var(--gold-dim); padding: 3px 8px; border-radius: 100px;
+}
+
+/* ── BADGES ── */
+.badges-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  margin-bottom: 24px;
+}
+
+.badge-item {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 8px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--surface);
+  transition: all 0.2s var(--ease); cursor: pointer;
+}
+.badge-item:hover { transform: translateY(-2px); border-color: rgba(255,214,10,0.3); }
+.badge-item.locked { opacity: 0.35; filter: grayscale(1); cursor: default; }
+.badge-item.locked:hover { transform: none; border-color: var(--border); }
+
+.badge-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; position: relative;
+}
+.badge-icon.gold { background: linear-gradient(135deg, rgba(255,214,10,0.2), rgba(255,214,10,0.05)); border: 1px solid rgba(255,214,10,0.3); }
+.badge-icon.violet { background: linear-gradient(135deg, var(--accent-dim), transparent); border: 1px solid rgba(123,110,246,0.3); }
+.badge-icon.green { background: linear-gradient(135deg, rgba(52,199,89,0.15), transparent); border: 1px solid rgba(52,199,89,0.3); }
+.badge-icon.cyan { background: linear-gradient(135deg, rgba(6,182,212,0.15), transparent); border: 1px solid rgba(6,182,212,0.3); }
+
+.badge-name { font-size: 10px; font-weight: 600; color: var(--muted); text-align: center; line-height: 1.3; }
+.badge-item:not(.locked) .badge-name { color: var(--text); }
+
+/* ── LEADERBOARD ── */
+.leaderboard { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+
+.lb-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+.lb-row.you {
+  background: var(--accent-dim);
+  border-color: rgba(123,110,246,0.3);
+}
+.lb-rank {
+  width: 28px; text-align: center;
+  font-size: 14px; font-weight: 800; color: var(--muted2);
+}
+.lb-rank.top1 { color: var(--gold); }
+.lb-rank.top2 { color: #C0C0C0; }
+.lb-rank.top3 { color: #CD7F32; }
+
+.lb-avatar {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; background: var(--surface2); flex-shrink: 0;
+}
+.lb-name { flex: 1; font-size: 14px; font-weight: 600; }
+.lb-level { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.lb-xp-val {
+  font-size: 13px; font-weight: 700; color: var(--gold);
+  display: flex; align-items: center; gap: 4px;
+}
+
+/* ── XP TOAST ── */
+.xp-toast {
+  position: fixed; top: 80px; right: 24px; z-index: 200;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(7,7,16,0.95);
+  border: 1px solid rgba(255,214,10,0.35);
+  border-radius: 14px; padding: 12px 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,214,10,0.1);
+  backdrop-filter: blur(20px);
+  transform: translateX(120%);
+  transition: transform 0.4s var(--ease);
+  max-width: 260px;
+}
+.xp-toast.show { transform: translateX(0); }
+.toast-icon { font-size: 24px; }
+.toast-body { flex: 1; }
+.toast-title { font-size: 13px; font-weight: 700; color: var(--gold); margin-bottom: 2px; }
+.toast-sub { font-size: 12px; color: var(--muted); }
+
+/* ── LEVEL UP OVERLAY ── */
+.levelup-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(7,7,16,0.92);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.4s;
+}
+.levelup-overlay.show { opacity: 1; pointer-events: all; }
+
+.levelup-card {
+  text-align: center; padding: 40px;
+  animation: levelIn 0.6s var(--ease) both;
+}
+@keyframes levelIn {
+  from { opacity:0; transform:scale(0.8) translateY(20px); }
+  to   { opacity:1; transform:none; }
+}
+
+.levelup-sparkles {
+  font-size: 48px; margin-bottom: 16px;
+  animation: spin 3s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.levelup-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 42px; font-weight: 900;
+  background: linear-gradient(135deg, var(--gold), #FFB800);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  margin-bottom: 8px;
+}
+.levelup-name {
+  font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+}
+.levelup-sub { font-size: 14px; color: var(--muted); margin-bottom: 28px; }
+
+.particles { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 301; }
+.particle {
+  position: absolute;
+  width: 8px; height: 8px; border-radius: 50%;
+  animation: fall linear forwards;
+}
+@keyframes fall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+
+/* ── COMBO BADGE ── */
+.combo-badge {
+  position: fixed; top: 80px; left: 24px; z-index: 200;
+  padding: 10px 18px; border-radius: 100px;
+  background: linear-gradient(135deg, var(--orange), #FF6B00);
+  color: white; font-size: 14px; font-weight: 800;
+  box-shadow: 0 4px 20px rgba(255,149,0,0.5);
+  transform: translateY(-80px) scale(0.8);
+  transition: all 0.4s var(--ease);
+  letter-spacing: 0.02em;
+}
+.combo-badge.show {
+  transform: translateY(0) scale(1);
+  animation: comboBounce 0.4s var(--ease);
+}
+@keyframes comboBounce {
+  0%  { transform: scale(0.5); }
+  60% { transform: scale(1.1); }
+  100%{ transform: scale(1); }
+}
+
+/* ── FLOATING XP NUMBER ── */
+.float-xp {
+  position: fixed; z-index: 250;
+  font-family: 'Playfair Display', serif;
+  font-size: 22px; font-weight: 900;
+  color: var(--gold);
+  pointer-events: none;
+  text-shadow: 0 0 20px var(--gold-glow);
+  animation: floatUp 1.2s var(--ease) forwards;
+}
+@keyframes floatUp {
+  0%  { opacity:1; transform:translateY(0) scale(1); }
+  50% { opacity:1; transform:translateY(-40px) scale(1.2); }
+  100%{ opacity:0; transform:translateY(-80px) scale(0.8); }
+}
+
+/* ── BTN ── */
+.btn {
+  padding: 12px 20px; border-radius: 12px; border: none;
+  font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all 0.22s var(--ease);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white; box-shadow: 0 4px 18px var(--accent-glow);
+  width: 100%; padding: 14px;
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px var(--accent-glow); }
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold), #FFB800);
+  color: #1A1200; font-weight: 800;
+  box-shadow: 0 4px 18px var(--gold-glow);
+  padding: 14px 32px;
+}
+.btn-gold:hover { transform: translateY(-2px); box-shadow: 0 8px 28px var(--gold-glow); }
+
+/* divider */
+.divider { height:1px; background:var(--border); margin:20px 0; }
+</style>
+</head>
+<body>
+
+<!-- PARTICLES CONTAINER -->
+<div class="particles" id="particles"></div>
+
+<!-- XP TOAST -->
+<div class="xp-toast" id="xp-toast">
+  <div class="toast-icon" id="toast-icon">⭐</div>
+  <div class="toast-body">
+    <div class="toast-title" id="toast-title">+15 XP</div>
+    <div class="toast-sub" id="toast-sub">Correct answer!</div>
+  </div>
+</div>
+
+<!-- COMBO BADGE -->
+<div class="combo-badge" id="combo-badge">🔥 3× Combo!</div>
+
+<!-- LEVEL UP OVERLAY -->
+<div class="levelup-overlay" id="levelup-overlay">
+  <div class="levelup-card">
+    <div class="levelup-sparkles">✦</div>
+    <div class="levelup-title">LEVEL UP!</div>
+    <div class="levelup-name" id="levelup-name">You are now a Scholar</div>
+    <div class="levelup-sub">Keep going — every session makes you stronger.</div>
+    <button class="btn btn-gold" onclick="closeLevelUp()">Continue →</button>
+  </div>
+</div>
+
+<!-- ── HUD ── -->
+<div class="hud">
+  <div class="hud-brand">Alphie</div>
+
+  <div class="streak-pill" onclick="showToast('🔥','3-Day Streak!','Keep going — don\'t break it!')">
+    <span class="streak-fire">🔥</span>
+    <span id="streak-count">3</span> day streak
+  </div>
+
+  <div class="xp-section">
+    <div class="xp-labels">
+      <span id="level-name-hud">Scholar</span>
+      <span><span id="xp-current">340</span> / <span id="xp-next">500</span> XP</span>
+    </div>
+    <div class="xp-bar-wrap">
+      <div class="xp-bar-fill" id="xp-bar" style="width:68%"></div>
+    </div>
+  </div>
+
+  <div class="level-badge" onclick="openLeaderboard()">
+    ⭐ Lv.<span id="level-num">3</span>
+  </div>
+
+  <div class="total-xp">
+    ✦ <span id="total-xp-display">1,340</span>
+  </div>
+</div>
+
+<!-- ── MAIN ── -->
+<div class="main">
+
+  <!-- DAILY QUEST -->
+  <div class="section-head">
+    <div class="section-label">Today's Mission</div>
+    <div class="section-title">Daily Quest</div>
+    <div class="section-sub">Complete all 3 tasks to earn your daily bonus XP.</div>
+  </div>
+
+  <div class="quest-card">
+    <div class="quest-header">
+      <div class="quest-title">📅 Daily Scholar Challenge</div>
+      <div class="quest-reward">✦ +100 XP Bonus</div>
+    </div>
+    <div class="quest-tasks">
+      <div class="quest-task done-task" id="qt1">
+        <div class="qt-check done" id="qc1">✓</div>
+        Complete 1 reading session
+      </div>
+      <div class="quest-task" id="qt2">
+        <div class="qt-check" id="qc2"></div>
+        Answer 3 quiz questions correctly
+      </div>
+      <div class="quest-task" id="qt3">
+        <div class="qt-check" id="qc3"></div>
+        Complete the Feynman Test
+      </div>
+    </div>
+    <div class="quest-progress">
+      <div class="qp-label">
+        <span>Progress</span>
+        <span id="qp-text">1 / 3 tasks</span>
+      </div>
+      <div class="qp-bar">
+        <div class="qp-fill" id="qp-fill" style="width:33%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIMULATE ACTIONS -->
+  <div class="section-head" style="margin-top:8px">
+    <div class="section-label">Try It Now</div>
+    <div class="section-title">Earn XP</div>
+    <div class="section-sub">Each action rewards you. Chain correct answers for a combo multiplier.</div>
+  </div>
+
+  <div class="actions-grid">
+    <div class="action-card" onclick="earnXP(15, '✅ Correct Answer!', 'Quiz — Active Recall', true, event)">
+      <div class="ac-icon">🧠</div>
+      <div class="ac-name">Correct Answer</div>
+      <div class="ac-sub">Quiz question</div>
+      <div class="ac-xp">✦ +15 XP</div>
+    </div>
+    <div class="action-card" onclick="earnXP(50, '🏆 Perfect Score!', 'All questions correct!', true, event)">
+      <div class="ac-icon">🏆</div>
+      <div class="ac-name">Perfect Quiz</div>
+      <div class="ac-sub">All answers correct</div>
+      <div class="ac-xp">✦ +50 XP</div>
+    </div>
+    <div class="action-card" onclick="earnXP(20, '🔬 Feynman Done!', 'You explained it simply', true, event)">
+      <div class="ac-icon">🔬</div>
+      <div class="ac-name">Feynman Test</div>
+      <div class="ac-sub">Explain in your words</div>
+      <div class="ac-xp">✦ +20 XP</div>
+    </div>
+    <div class="action-card" onclick="earnXP(25, '🎙 Voice Master!', 'Feynman by voice +bonus', true, event)">
+      <div class="ac-icon">🎙</div>
+      <div class="ac-name">Voice Feynman</div>
+      <div class="ac-sub">Speak your explanation</div>
+      <div class="ac-xp">✦ +25 XP</div>
+    </div>
+    <div class="action-card" onclick="earnXP(10, '💪 Resilience!', 'You retried and improved', false, event)">
+      <div class="ac-icon">💪</div>
+      <div class="ac-name">Retry & Improve</div>
+      <div class="ac-sub">Failed then tried again</div>
+      <div class="ac-xp">✦ +10 XP</div>
+    </div>
+    <div class="action-card" onclick="earnXP(10, '📖 Session Done!', 'Reading session complete', false, event)">
+      <div class="ac-icon">📖</div>
+      <div class="ac-name">Reading Session</div>
+      <div class="ac-sub">Complete a reading</div>
+      <div class="ac-xp">✦ +10 XP</div>
+    </div>
+  </div>
+
+  <!-- BADGES -->
+  <div class="section-head">
+    <div class="section-label">Your Collection</div>
+    <div class="section-title">Badges</div>
+    <div class="section-sub">Earn badges by reaching milestones. Locked badges reveal their secret when you hover.</div>
+  </div>
+
+  <div class="badges-grid">
+    <div class="badge-item" title="First reading session" onclick="showToast('📖','First Steps','You completed your first session!')">
+      <div class="badge-icon violet">📖</div>
+      <div class="badge-name">First Steps</div>
+    </div>
+    <div class="badge-item" title="3-day streak" onclick="showToast('🔥','On Fire','3 days in a row!')">
+      <div class="badge-icon gold">🔥</div>
+      <div class="badge-name">On Fire</div>
+    </div>
+    <div class="badge-item" title="Perfect quiz score" onclick="showToast('🏆','Perfectionist','100% on a quiz!')">
+      <div class="badge-icon gold">🏆</div>
+      <div class="badge-name">Perfectionist</div>
+    </div>
+    <div class="badge-item locked" title="Complete 5 sessions">
+      <div class="badge-icon violet">⚡</div>
+      <div class="badge-name">Power Reader</div>
+    </div>
+    <div class="badge-item locked" title="Use voice Feynman">
+      <div class="badge-icon cyan">🎙</div>
+      <div class="badge-name">Voice Master</div>
+    </div>
+    <div class="badge-item locked" title="Read in French">
+      <div class="badge-icon cyan">🇫🇷</div>
+      <div class="badge-name">Bilingue</div>
+    </div>
+    <div class="badge-item locked" title="7-day streak">
+      <div class="badge-icon gold">⭐</div>
+      <div class="badge-name">Week Warrior</div>
+    </div>
+    <div class="badge-item locked" title="Reach level 5">
+      <div class="badge-icon gold">🧙</div>
+      <div class="badge-name">Sage</div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div class="section-head">
+    <div class="section-label">This Week</div>
+    <div class="section-title">Leaderboard</div>
+    <div class="section-sub">Weekly XP resets every Monday. Push to the top.</div>
+  </div>
+
+  <div class="leaderboard">
+    <div class="lb-row">
+      <div class="lb-rank top1">🥇</div>
+      <div class="lb-avatar">😎</div>
+      <div>
+        <div class="lb-name">Marcus T.</div>
+        <div class="lb-level">⭐ Lv.5 · Sage</div>
+      </div>
+      <div class="lb-xp-val">✦ 2,840</div>
+    </div>
+    <div class="lb-row">
+      <div class="lb-rank top2">🥈</div>
+      <div class="lb-avatar">🎓</div>
+      <div>
+        <div class="lb-name">Sarah K.</div>
+        <div class="lb-level">⭐ Lv.4 · Master</div>
+      </div>
+      <div class="lb-xp-val">✦ 2,210</div>
+    </div>
+    <div class="lb-row">
+      <div class="lb-rank top3">🥉</div>
+      <div class="lb-avatar">📚</div>
+      <div>
+        <div class="lb-name">Amir B.</div>
+        <div class="lb-level">⭐ Lv.4 · Master</div>
+      </div>
+      <div class="lb-xp-val">✦ 1,890</div>
+    </div>
+    <div class="lb-row you">
+      <div class="lb-rank" style="color:var(--accent);font-weight:900">4</div>
+      <div class="lb-avatar">✦</div>
+      <div>
+        <div class="lb-name">You <span style="font-size:10px;color:var(--accent);font-weight:600">← YOU</span></div>
+        <div class="lb-level">⭐ Lv.3 · Scholar</div>
+      </div>
+      <div class="lb-xp-val" id="your-lb-xp">✦ 1,340</div>
+    </div>
+    <div class="lb-row">
+      <div class="lb-rank">5</div>
+      <div class="lb-avatar">🌟</div>
+      <div>
+        <div class="lb-name">Priya M.</div>
+        <div class="lb-level">⭐ Lv.3 · Scholar</div>
+      </div>
+      <div class="lb-xp-val">✦ 980</div>
+    </div>
+  </div>
+
+  <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:8px">
+    You're <strong style="color:var(--accent)">360 XP</strong> away from 3rd place 🚀
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════
+// GAME STATE
+// ════════════════════════════════════
+const LEVELS = [
+  { name:'Curious',  min:0,    max:200,  emoji:'🌱' },
+  { name:'Thinker',  min:200,  max:500,  emoji:'💭' },
+  { name:'Scholar',  min:500,  max:1000, emoji:'📚' },
+  { name:'Master',   min:1000, max:2000, emoji:'🎓' },
+  { name:'Sage',     min:2000, max:9999, emoji:'🧙' }
+];
+
+let gameState = {
+  totalXP: 1340,
+  level: 2, // 0-indexed → Scholar
+  streak: 3,
+  combo: 0,
+  comboTimer: null,
+  questDone: [true, false, false],
+  toastQueue: []
+};
+
+// ════════════════════════════════════
+// EARN XP — main function
+// ════════════════════════════════════
+function earnXP(base, title, sub, isCorrect, event) {
+  // COMBO SYSTEM
+  if (isCorrect) {
+    gameState.combo++;
+    clearTimeout(gameState.comboTimer);
+    gameState.comboTimer = setTimeout(() => resetCombo(), 4000);
+  } else {
+    resetCombo();
+  }
+
+  // Combo multiplier
+  let xp = base;
+  let comboLabel = '';
+  if (gameState.combo >= 5) {
+    xp = Math.round(base * 2.0);
+    comboLabel = '🔥 5× COMBO!';
+    showCombo('🔥 ' + gameState.combo + '× Combo!');
+  } else if (gameState.combo >= 3) {
+    xp = Math.round(base * 1.5);
+    comboLabel = '⚡ 3× Combo!';
+    showCombo('⚡ ' + gameState.combo + '× Combo!');
+  } else if (gameState.combo >= 2) {
+    showCombo('🎯 ' + gameState.combo + '× Combo!');
+  }
+
+  // Streak multiplier
+  if (gameState.streak >= 7) xp = Math.round(xp * 1.5);
+  else if (gameState.streak >= 3) xp = Math.round(xp * 1.2);
+
+  // Floating XP number at click position
+  if (event) {
+    spawnFloatingXP('+' + xp + ' XP', event.clientX, event.clientY);
+  }
+
+  // Update state
+  const oldLevel = getCurrentLevel();
+  gameState.totalXP += xp;
+  const newLevel = getCurrentLevel();
+
+  // Update HUD
+  updateHUD();
+
+  // Toast
+  const icon = isCorrect ? '⭐' : '💪';
+  showToast(icon, '+' + xp + ' XP' + (xp !== base ? ' (×' + (xp/base).toFixed(1) + ')' : ''), sub);
+
+  // Level up check
+  if (newLevel > oldLevel) {
+    setTimeout(() => triggerLevelUp(newLevel), 800);
+  }
+
+  // Update leaderboard your row
+  document.getElementById('your-lb-xp').textContent = '✦ ' + gameState.totalXP.toLocaleString();
+}
+
+function getCurrentLevel() {
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (gameState.totalXP >= LEVELS[i].min) return i;
+  }
+  return 0;
+}
+
+function resetCombo() {
+  gameState.combo = 0;
+  const cb = document.getElementById('combo-badge');
+  cb.classList.remove('show');
+}
+
+function showCombo(text) {
+  const cb = document.getElementById('combo-badge');
+  cb.textContent = text;
+  cb.classList.remove('show');
+  void cb.offsetWidth;
+  cb.classList.add('show');
+  setTimeout(() => cb.classList.remove('show'), 2500);
+}
+
+// ════════════════════════════════════
+// UPDATE HUD
+// ════════════════════════════════════
+function updateHUD() {
+  const lvlIdx = getCurrentLevel();
+  const lvl = LEVELS[lvlIdx];
+  const next = LEVELS[Math.min(lvlIdx + 1, LEVELS.length - 1)];
+
+  gameState.level = lvlIdx;
+
+  const xpInLevel = gameState.totalXP - lvl.min;
+  const xpNeeded = next.min - lvl.min;
+  const pct = Math.min(Math.round(xpInLevel / xpNeeded * 100), 100);
+
+  document.getElementById('xp-bar').style.width = pct + '%';
+  document.getElementById('xp-current').textContent = gameState.totalXP - lvl.min;
+  document.getElementById('xp-next').textContent = next.min - lvl.min;
+  document.getElementById('level-name-hud').textContent = lvl.emoji + ' ' + lvl.name;
+  document.getElementById('level-num').textContent = lvlIdx + 1;
+  document.getElementById('total-xp-display').textContent = gameState.totalXP.toLocaleString();
+}
+
+// ════════════════════════════════════
+// TOAST
+// ════════════════════════════════════
+let toastTimer = null;
+function showToast(icon, title, sub) {
+  clearTimeout(toastTimer);
+  document.getElementById('toast-icon').textContent = icon;
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-sub').textContent = sub;
+  const el = document.getElementById('xp-toast');
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ════════════════════════════════════
+// FLOATING XP NUMBER
+// ════════════════════════════════════
+function spawnFloatingXP(text, x, y) {
+  const el = document.createElement('div');
+  el.className = 'float-xp';
+  el.textContent = text;
+  el.style.left = (x - 30) + 'px';
+  el.style.top = (y - 20) + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1200);
+}
+
+// ════════════════════════════════════
+// LEVEL UP
+// ════════════════════════════════════
+function triggerLevelUp(lvlIdx) {
+  const lvl = LEVELS[lvlIdx];
+  document.getElementById('levelup-name').textContent = lvl.emoji + ' You are now a ' + lvl.name;
+  document.getElementById('levelup-overlay').classList.add('show');
+  spawnParticles();
+}
+
+function closeLevelUp() {
+  document.getElementById('levelup-overlay').classList.remove('show');
+  document.getElementById('particles').innerHTML = '';
+}
+
+function spawnParticles() {
+  const colors = ['#FFD60A','#7B6EF6','#34C759','#FF9500','#06B6D4','#FF453A','#9B8BFF'];
+  const c = document.getElementById('particles');
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.top = '-10px';
+    p.style.background = colors[Math.floor(Math.random() * colors.length)];
+    p.style.width = (4 + Math.random() * 8) + 'px';
+    p.style.height = (4 + Math.random() * 8) + 'px';
+    p.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    p.style.animationDuration = (2 + Math.random() * 3) + 's';
+    p.style.animationDelay = Math.random() * 1.5 + 's';
+    c.appendChild(p);
+  }
+  setTimeout(() => c.innerHTML = '', 6000);
+}
+
+// ════════════════════════════════════
+// QUEST PROGRESS
+// ════════════════════════════════════
+let questProgress = 1;
+function advanceQuest(idx) {
+  if (gameState.questDone[idx]) return;
+  gameState.questDone[idx] = true;
+  questProgress++;
+
+  const task = document.getElementById('qt' + (idx+1));
+  const check = document.getElementById('qc' + (idx+1));
+  task.classList.add('done-task');
+  check.classList.add('done');
+  check.textContent = '✓';
+
+  const pct = Math.round(questProgress / 3 * 100);
+  document.getElementById('qp-fill').style.width = pct + '%';
+  document.getElementById('qp-text').textContent = questProgress + ' / 3 tasks';
+
+  if (questProgress === 3) {
+    setTimeout(() => {
+      showToast('🎉', '+100 XP Daily Bonus!', 'Quest complete! You earned the daily reward!');
+      earnXP(100, '🎉 Daily Quest Done!', 'All tasks completed!', true, null);
+    }, 500);
+  }
+}
+
+// auto-advance quest on actions (demo)
+const origEarn = window.earnXP;
+
+// Init
+updateHUD();
+
+// Trigger leaderboard scroll animation
+document.getElementById('levelup-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('levelup-overlay')) closeLevelUp();
+});
+</script>
+</body>
+</html>

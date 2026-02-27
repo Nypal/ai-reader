@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alphie — Reader</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ════════════ THEMES ════════════ */
+:root {
+  --bg:            #080810;
+  --surface:       rgba(255,255,255,0.04);
+  --border:        rgba(255,255,255,0.07);
+  --text:          #E8E8F4;
+  --text-dim:      rgba(232,232,244,0.22);
+  --muted:         rgba(232,232,244,0.38);
+  --accent:        #7B6EF6;
+  --accent2:       #9B8BFF;
+  --accent-glow:   rgba(123,110,246,0.25);
+  --accent-dim:    rgba(123,110,246,0.10);
+  --word-bg:       rgba(123,110,246,0.28);
+  --word-color:    #fff;
+  --player-bg:     rgba(16,14,28,0.92);
+  --player-border: rgba(255,255,255,0.09);
+  --progress-bg:   rgba(255,255,255,0.07);
+  --glow1:         rgba(123,110,246,0.09);
+  --glow2:         rgba(6,182,212,0.06);
+  --ease:          cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] {
+  --bg:            #F0EEE9;
+  --surface:       rgba(255,255,255,0.65);
+  --border:        rgba(0,0,0,0.07);
+  --text:          #1A1A26;
+  --text-dim:      rgba(26,26,38,0.22);
+  --muted:         rgba(26,26,38,0.42);
+  --accent:        #5B4BD5;
+  --accent2:       #7B6EF6;
+  --accent-glow:   rgba(91,75,213,0.18);
+  --accent-dim:    rgba(91,75,213,0.08);
+  --word-bg:       rgba(91,75,213,0.18);
+  --word-color:    #3320A0;
+  --player-bg:     rgba(255,255,255,0.94);
+  --player-border: rgba(0,0,0,0.09);
+  --progress-bg:   rgba(0,0,0,0.07);
+  --glow1:         rgba(91,75,213,0.06);
+  --glow2:         rgba(6,182,212,0.04);
+}
+
+[data-theme="sepia"] {
+  --bg:            #E6D9C6;
+  --surface:       rgba(255,248,235,0.55);
+  --border:        rgba(100,65,20,0.10);
+  --text:          #2A1E0C;
+  --text-dim:      rgba(42,30,12,0.20);
+  --muted:         rgba(42,30,12,0.42);
+  --accent:        #B87333;
+  --accent2:       #D4944A;
+  --accent-glow:   rgba(184,115,51,0.22);
+  --accent-dim:    rgba(184,115,51,0.10);
+  --word-bg:       rgba(184,115,51,0.22);
+  --word-color:    #7A3E0A;
+  --player-bg:     rgba(244,234,216,0.96);
+  --player-border: rgba(100,65,20,0.12);
+  --progress-bg:   rgba(100,65,20,0.08);
+  --glow1:         rgba(184,115,51,0.09);
+  --glow2:         rgba(212,148,74,0.06);
+}
+
+[data-theme="forest"] {
+  --bg:            #080F0A;
+  --surface:       rgba(255,255,255,0.03);
+  --border:        rgba(255,255,255,0.07);
+  --text:          #DFF0E4;
+  --text-dim:      rgba(223,240,228,0.20);
+  --muted:         rgba(223,240,228,0.38);
+  --accent:        #34C759;
+  --accent2:       #5EE87A;
+  --accent-glow:   rgba(52,199,89,0.22);
+  --accent-dim:    rgba(52,199,89,0.10);
+  --word-bg:       rgba(52,199,89,0.22);
+  --word-color:    #fff;
+  --player-bg:     rgba(8,18,10,0.94);
+  --player-border: rgba(255,255,255,0.08);
+  --progress-bg:   rgba(255,255,255,0.07);
+  --glow1:         rgba(52,199,89,0.08);
+  --glow2:         rgba(0,180,80,0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.5s var(--ease), color 0.5s var(--ease);
+  overflow-x: hidden;
+}
+
+/* ── AMBIENT ── */
+.ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.glow-1 {
+  position: absolute; top: -10%; left: 50%;
+  transform: translateX(-50%);
+  width: 60vw; height: 40vh;
+  background: radial-gradient(ellipse, var(--glow1) 0%, transparent 70%);
+  animation: g1 7s ease-in-out infinite;
+  transition: background 0.6s;
+}
+.glow-2 {
+  position: absolute; bottom: 15%; right: -5%;
+  width: 30vw; height: 30vh;
+  background: radial-gradient(ellipse, var(--glow2) 0%, transparent 65%);
+  animation: g2 9s ease-in-out infinite;
+  transition: background 0.6s;
+}
+@keyframes g1 { 0%,100%{opacity:.6;transform:translateX(-50%) scale(1)}50%{opacity:1;transform:translateX(-50%) scale(1.07)} }
+@keyframes g2 { 0%,100%{opacity:.4;transform:scale(1)}50%{opacity:.9;transform:scale(1.1)} }
+
+/* ── TOP BAR ── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 32px;
+  background: rgba(8,8,16,0.0);
+  transition: background 0.3s, backdrop-filter 0.3s;
+}
+
+[data-theme="light"] .topbar { background: rgba(240,238,233,0.0); }
+[data-theme="sepia"] .topbar { background: rgba(230,217,198,0.0); }
+[data-theme="forest"] .topbar { background: rgba(8,15,10,0.0); }
+
+.topbar.scrolled {
+  background: rgba(8,8,16,0.85) !important;
+  backdrop-filter: blur(20px);
+}
+[data-theme="light"] .topbar.scrolled { background: rgba(240,238,233,0.9) !important; }
+[data-theme="sepia"] .topbar.scrolled { background: rgba(230,217,198,0.9) !important; }
+[data-theme="forest"] .topbar.scrolled { background: rgba(8,15,10,0.9) !important; }
+
+.back-btn {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 7px 14px;
+  border-radius: 100px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.2s var(--ease);
+}
+.back-btn:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.topbar-right {
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* speed pill */
+.speed-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px; font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+  backdrop-filter: blur(12px);
+}
+.speed-pill:hover { border-color: var(--accent); color: var(--accent); }
+.speed-pill.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* theme dots */
+.theme-dots {
+  display: flex; gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 4px;
+  backdrop-filter: blur(12px);
+}
+.tdot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+.tdot:hover { transform: scale(1.15); }
+.tdot.active { border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.tdot-night  { background: #0D0D1A; }
+.tdot-light  { background: #F0EEE9; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
+.tdot-sepia  { background: #E6D9C6; box-shadow: 0 0 0 1px rgba(0,0,0,0.12); }
+.tdot-forest { background: #080F0A; box-shadow: 0 0 0 1px rgba(255,255,255,0.1); }
+
+/* ── PROGRESS BAR (top) ── */
+.progress-line {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 2px; z-index: 100;
+  background: var(--progress-bg);
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  width: 28%;
+  transition: width 0.3s var(--ease), background 0.5s;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* ── CONTENT ── */
+.content {
+  position: relative; z-index: 1;
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 100px 24px 160px;
+  width: 100%;
+}
+
+/* ── SENTENCES ── */
+.sentence {
+  font-size: 19px;
+  line-height: 1.85;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  transition: color 0.35s var(--ease), background 0.35s var(--ease), opacity 0.35s;
+  cursor: pointer;
+  position: relative;
+}
+
+.sentence::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform 0.3s var(--ease), background 0.5s;
+}
+
+.sentence:hover {
+  color: rgba(232,232,244,0.55);
+  background: rgba(255,255,255,0.02);
+}
+
+[data-theme="light"] .sentence:hover { color: rgba(26,26,38,0.55); background: rgba(0,0,0,0.02); }
+[data-theme="sepia"] .sentence:hover { color: rgba(42,30,12,0.55); background: rgba(0,0,0,0.02); }
+[data-theme="forest"] .sentence:hover { color: rgba(223,240,228,0.55); background: rgba(255,255,255,0.02); }
+
+.sentence.active {
+  color: var(--text);
+  background: var(--accent-dim);
+}
+
+.sentence.active::before {
+  transform: scaleY(1);
+}
+
+/* ── WORD HIGHLIGHTING ── */
+.word {
+  display: inline;
+  border-radius: 3px;
+  padding: 1px 1px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.word.spoken { color: var(--muted); }
+
+.word.current {
+  background: var(--word-bg);
+  color: var(--word-color);
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 4px;
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: background 0.12s, color 0.12s, box-shadow 0.5s;
+}
+
+/* ── PLAYER BAR ── */
+.player {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--player-bg);
+  border: 1px solid var(--player-border);
+  border-radius: 100px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  backdrop-filter: blur(32px);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+  transition: background 0.4s, border-color 0.4s;
+  white-space: nowrap;
+}
+
+/* player glow under bar */
+.player::before {
+  content: '';
+  position: absolute;
+  bottom: -10px; left: 20%; right: 20%;
+  height: 20px;
+  background: var(--accent-glow);
+  filter: blur(16px);
+  pointer-events: none;
+  transition: background 0.5s;
+}
+
+.p-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s var(--ease);
+}
+.p-btn:hover { color: var(--text); background: var(--surface); }
+
+.p-play {
+  width: 46px; height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 20px var(--accent-glow);
+  transition: all 0.22s var(--ease);
+}
+.p-play:hover { transform: scale(1.08); box-shadow: 0 6px 28px var(--accent-glow); }
+.p-play:active { transform: scale(0.96); }
+
+.p-divider {
+  width: 1px; height: 24px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.p-speed {
+  font-size: 12px; font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  letter-spacing: 0.03em;
+}
+.p-speed:hover { color: var(--accent); background: var(--accent-dim); }
+
+.p-voice {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500;
+  color: var(--muted);
+}
+
+.p-wave {
+  display: flex; gap: 2px; align-items: flex-end; height: 12px;
+}
+.pw {
+  width: 2px; border-radius: 2px;
+  background: var(--accent);
+  transition: background 0.5s;
+}
+.pw:nth-child(1){ height:4px; }
+.pw:nth-child(2){ height:9px; }
+.pw:nth-child(3){ height:6px; }
+.pw:nth-child(4){ height:11px; }
+
+/* playing animation on wave */
+.playing .pw { animation: pw 0.9s ease-in-out infinite alternate; }
+.pw:nth-child(1){ animation-delay:0s; }
+.pw:nth-child(2){ animation-delay:0.1s; }
+.pw:nth-child(3){ animation-delay:0.2s; }
+.pw:nth-child(4){ animation-delay:0.15s; }
+@keyframes pw {
+  from { transform: scaleY(0.5); opacity: 0.5; }
+  to   { transform: scaleY(1.1); opacity: 1; }
+}
+
+.p-progress {
+  width: 80px;
+  height: 3px;
+  background: var(--progress-bg);
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.p-fill {
+  height: 100%;
+  width: 28%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 3px;
+  transition: width 0.4s linear, background 0.5s;
+}
+
+/* ── DEMO CONTROLS ── */
+.demo-bar {
+  position: fixed;
+  bottom: 90px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex; gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 6px 14px;
+  backdrop-filter: blur(16px);
+  font-size: 11px; color: var(--muted);
+  align-items: center;
+  gap: 10px;
+}
+
+.demo-btn {
+  padding: 4px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.2s;
+}
+.demo-btn:hover { background: var(--accent); color: white; }
+</style>
+</head>
+<body>
+
+<div class="ambient">
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+</div>
+
+<!-- PROGRESS LINE -->
+<div class="progress-line">
+  <div class="progress-fill" id="prog-fill"></div>
+</div>
+
+<!-- TOP BAR -->
+<nav class="topbar" id="topbar">
+  <button class="back-btn" onclick="alert('← Back to Home')">← Back</button>
+  <div class="topbar-right">
+    <div class="theme-dots">
+      <div class="tdot tdot-night active" data-theme="night" onclick="setTheme(this)" title="Night"></div>
+      <div class="tdot tdot-light" data-theme="light" onclick="setTheme(this)" title="Light"></div>
+      <div class="tdot tdot-sepia" data-theme="sepia" onclick="setTheme(this)" title="Sepia"></div>
+      <div class="tdot tdot-forest" data-theme="forest" onclick="setTheme(this)" title="Forest"></div>
+    </div>
+  </div>
+</nav>
+
+<!-- CONTENT -->
+<div class="content" id="content">
+
+  <div class="sentence" id="s0" onclick="activateSentence(0)">
+    I am dyslexic.
+  </div>
+
+  <div class="sentence active" id="s1" onclick="activateSentence(1)">
+    Growing up, my dad would read Harry Potter to me because
+    <span class="word spoken">I</span>
+    <span class="word spoken">couldn't</span>
+    <span class="word spoken">do</span>
+    <span class="word current">it</span>
+    <span class="word">myself.</span>
+  </div>
+
+  <div class="sentence" id="s2" onclick="activateSentence(2)">
+    He was my hero.
+  </div>
+
+  <div class="sentence" id="s3" onclick="activateSentence(3)">
+    But without reading, I couldn't become the person I wanted to be.
+  </div>
+
+  <div class="sentence" id="s4" onclick="activateSentence(4)">
+    So, I taught myself to code and built Speechify to be my text to speech platform.
+  </div>
+
+  <div class="sentence" id="s5" onclick="activateSentence(5)">
+    Together with over 200 amazing people at Speechify, we've become the largest provider of AI speech in the world.
+  </div>
+
+  <div class="sentence" id="s6" onclick="activateSentence(6)">
+    Today, over 55 million people can achieve their full potential in school and society because Speechify lets them read faster, read more, and remember more.
+  </div>
+
+  <div class="sentence" id="s7" onclick="activateSentence(7)">
+    Thank you for using Speechify!
+  </div>
+
+  <div class="sentence" id="s8" onclick="activateSentence(8)">
+    Signature
+  </div>
+
+</div>
+
+<!-- DEMO CONTROLS -->
+<div class="demo-bar">
+  <span style="opacity:0.6">Demo:</span>
+  <button class="demo-btn" onclick="prevSentence()">← Prev</button>
+  <button class="demo-btn" onclick="nextSentence()">Next →</button>
+  <button class="demo-btn" onclick="togglePlay()">▶ Play words</button>
+</div>
+
+<!-- PLAYER BAR -->
+<div class="player" id="player">
+  <button class="p-btn" onclick="prevSentence()">⏮</button>
+  <button class="p-play" id="play-btn" onclick="togglePlay()">▶</button>
+  <button class="p-btn" onclick="nextSentence()">⏭</button>
+
+  <div class="p-divider"></div>
+
+  <div class="p-speed" onclick="cycleSpeed()">1×</div>
+
+  <div class="p-divider"></div>
+
+  <div class="p-voice">
+    <div class="p-wave playing" id="pwave">
+      <div class="pw"></div><div class="pw"></div>
+      <div class="pw"></div><div class="pw"></div>
+    </div>
+    Onyx
+  </div>
+
+  <div class="p-divider"></div>
+
+  <div class="p-progress" onclick="seekProgress(event)">
+    <div class="p-fill" id="p-fill"></div>
+  </div>
+</div>
+
+<script>
+let activeSentence = 1;
+let playing = false;
+let wordInterval = null;
+let currentWordIdx = 4;
+const speeds = ['0.5×','0.75×','1×','1.25×','1.5×','2×','3×'];
+let speedIdx = 2;
+const totalSentences = 9;
+
+/* ── ACTIVATE SENTENCE ── */
+function activateSentence(idx) {
+  document.querySelectorAll('.sentence').forEach((s, i) => {
+    s.classList.remove('active');
+  });
+  const el = document.getElementById('s'+idx);
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+  activeSentence = idx;
+  updateProgress();
+}
+
+/* ── PROGRESS ── */
+function updateProgress() {
+  const pct = (activeSentence / (totalSentences - 1)) * 100;
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('p-fill').style.width = pct + '%';
+}
+
+/* ── NEXT / PREV ── */
+function nextSentence() {
+  if (activeSentence < totalSentences - 1) activateSentence(activeSentence + 1);
+}
+
+function prevSentence() {
+  if (activeSentence > 0) activateSentence(activeSentence - 1);
+}
+
+/* ── WORD ANIMATION ── */
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('play-btn');
+  const wave = document.getElementById('pwave');
+  btn.textContent = playing ? '⏸' : '▶';
+  wave.classList.toggle('playing', playing);
+
+  if (playing) {
+    animateWords();
+  } else {
+    clearInterval(wordInterval);
+  }
+}
+
+function animateWords() {
+  const active = document.querySelector('.sentence.active');
+  if (!active) return;
+  const words = active.querySelectorAll('.word');
+  if (!words.length) return;
+
+  // reset
+  words.forEach(w => w.classList.remove('current','spoken'));
+  currentWordIdx = 0;
+
+  wordInterval = setInterval(() => {
+    words.forEach((w, i) => {
+      w.classList.remove('current','spoken');
+      if (i < currentWordIdx) w.classList.add('spoken');
+      if (i === currentWordIdx) w.classList.add('current');
+    });
+    currentWordIdx++;
+    if (currentWordIdx >= words.length) {
+      clearInterval(wordInterval);
+      setTimeout(() => {
+        if (playing) nextSentence();
+      }, 600);
+    }
+  }, 380);
+}
+
+/* ── SPEED ── */
+function cycleSpeed() {
+  speedIdx = (speedIdx + 1) % speeds.length;
+  document.querySelector('.p-speed').textContent = speeds[speedIdx];
+}
+
+/* ── SEEK ── */
+function seekProgress(e) {
+  const bar = e.currentTarget;
+  const pct = e.offsetX / bar.offsetWidth;
+  const idx = Math.round(pct * (totalSentences - 1));
+  activateSentence(Math.max(0, Math.min(idx, totalSentences - 1)));
+}
+
+/* ── THEME ── */
+function setTheme(dot) {
+  const t = dot.dataset.theme;
+  document.documentElement.setAttribute('data-theme', t === 'night' ? '' : t);
+  document.querySelectorAll('.tdot').forEach(d => d.classList.remove('active'));
+  dot.classList.add('active');
+}
+
+/* ── TOPBAR SCROLL ── */
+window.addEventListener('scroll', () => {
+  document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 20);
+});
+
+/* ── INIT ── */
+activateSentence(1);
+</script>
+</body>
+</html>
