@@ -22,8 +22,7 @@ type CacheItem = {
 
 type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
-const LOOKAHEAD = 2;
-const MAX_CACHE = 4;
+const MAX_CACHE = 6;
 
 function nowMs() {
     return performance.now();
@@ -243,52 +242,45 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         return { buf: buf, contentType: assertAudioContentType(ct) };
     }, [isSlowBackend, readingLanguage]);
 
-    const ensurePrefetchWindow = useCallback(
-        async (baseIdx: number, myRunId: number) => {
-            const targets: number[] = [];
-            for (let k = 1; k <= LOOKAHEAD; k++) {
-                const j = baseIdx + k;
-                if (j < sentencesSpoken.length) targets.push(j);
+    const prefetchSingle = useCallback(
+        async (j: number, myRunId: number) => {
+            if (isStoppedRef.current || runIdRef.current !== myRunId) return;
+            if (j < 0 || j >= sentencesSpoken.length) return;
+            if (cacheRef.current.has(j)) return;
+
+            // evict oldest if at capacity
+            if (cacheRef.current.size >= MAX_CACHE) {
+                const oldest = [...cacheRef.current.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
+                if (oldest) {
+                    cacheRef.current.delete(oldest.idx);
+                    safeRevoke(oldest.url);
+                }
             }
 
-            for (const j of targets) {
+            const ac = abortRef.current;
+            if (!ac) return;
+
+            const rawText = sentencesSpoken[j]?.trim() || "";
+            const safeText = rawText.length > 0 ? rawText : "Test.";
+
+            try {
+                const { buf, contentType } = await fetchTts(safeText, ac.signal);
                 if (isStoppedRef.current || runIdRef.current !== myRunId) return;
-                if (cacheRef.current.has(j)) continue;
 
-                // evict oldest
-                if (cacheRef.current.size >= MAX_CACHE) {
-                    const oldest = [...cacheRef.current.values()].sort((a, b) => a.createdAt - b.createdAt)[0];
-                    if (oldest) {
-                        cacheRef.current.delete(oldest.idx);
-                        safeRevoke(oldest.url);
-                    }
-                }
-
-                const ac = abortRef.current;
-                if (!ac) return;
-
-                const rawText = sentencesSpoken[j]?.trim() || "";
-                const safeText = rawText.length > 0 ? rawText : "Test.";
-
-                try {
-                    const { buf, contentType } = await fetchTts(safeText, ac.signal);
-                    if (isStoppedRef.current || runIdRef.current !== myRunId) return;
-
-                    const built = blobUrlFrom(buf, contentType);
-                    cacheRef.current.set(j, {
-                        idx: j,
-                        url: built.url,
-                        blob: built.blob,
-                        byteLength: built.byteLength,
-                        contentType: built.contentType,
-                        createdAt: Date.now(),
-                    });
-                    console.log("[PlayLearn] prefetched idx=", j, "bytes=", built.byteLength);
-                } catch (err: unknown) {
-                    const errMsg = err instanceof Error ? err.message : String(err);
-                    console.debug(`[PlayLearn] prefetch failed for idx ${j}: ${errMsg}`);
-                    // Will naturally retry on play miss
-                }
+                const built = blobUrlFrom(buf, contentType);
+                cacheRef.current.set(j, {
+                    idx: j,
+                    url: built.url,
+                    blob: built.blob,
+                    byteLength: built.byteLength,
+                    contentType: built.contentType,
+                    createdAt: Date.now(),
+                });
+                console.log("[PlayLearn] prefetched idx=", j, "bytes=", built.byteLength);
+            } catch (err: unknown) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                console.debug(`[PlayLearn] prefetch failed for idx ${j}: ${errMsg}`);
+                // Will naturally retry on play miss
             }
         },
         [fetchTts, sentencesSpoken]
@@ -318,9 +310,6 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         setPlaybackState("loading");
         const t0 = nowMs();
 
-        // Queue prefetches in background
-        void ensurePrefetchWindow(idx, runIdAtStart);
-
         const a = audioRef.current;
         if (!a) return;
         a.playbackRate = speed;
@@ -332,6 +321,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             currentObjectUrlRef.current = cached.url; // claim ownership
             cacheRef.current.delete(idx);
             a.src = currentObjectUrlRef.current;
+            a.load(); // pre-warm browser decoder for instant start
         } else {
             console.log(`[PlayLearn] cache miss idx=${idx} fetching...`);
             const text = sentencesSpoken[idx]?.trim();
@@ -348,6 +338,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
                 safeRevoke(currentObjectUrlRef.current);
                 currentObjectUrlRef.current = built.url;
                 a.src = currentObjectUrlRef.current;
+                a.load(); // pre-warm browser decoder for instant start
             } catch (e: unknown) {
                 if (isStoppedRef.current) return;
                 const errName = e instanceof Error ? e.name : "Error";
@@ -411,6 +402,18 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;
             console.log(`[PlayLearn] play started idx=${idx} ttfs_ms=${Math.round(nowMs() - t0)}ms`);
+
+            // N is now playing — kick off lookahead prefetches so N+1 is ready before N ends.
+            // N+1 immediately (highest priority, no competition with current fetch).
+            // N+2 after 300ms to avoid competing with N+1's fetch.
+            if (!isStoppedRef.current && runIdRef.current === runIdAtStart) {
+                void prefetchSingle(idx + 1, runIdAtStart);
+                setTimeout(() => {
+                    if (!isStoppedRef.current && runIdRef.current === runIdAtStart) {
+                        void prefetchSingle(idx + 2, runIdAtStart);
+                    }
+                }, 300);
+            }
         } catch (e: unknown) {
             setPlaybackState("error");
             const errName = e instanceof Error ? e.name : "Error";
@@ -423,7 +426,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             inFlightPlayRef.current = null;
         }
 
-    }, [fetchTts, ensurePrefetchWindow, speed, onFinish, sentences, sentencesSpoken]);
+    }, [fetchTts, prefetchSingle, speed, onFinish, sentences, sentencesSpoken]);
 
     useEffect(() => {
         if (speed > maxSpeedUsedRef.current) maxSpeedUsedRef.current = speed;

@@ -51,9 +51,8 @@ function App() {
             <motion.div
               key="input"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              animate={{ opacity: 1, transition: { duration: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
               <InputView onStart={handleStartReading} onArena={handleGoToArena} />
@@ -63,9 +62,8 @@ function App() {
             <motion.div
               key="reading"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              animate={{ opacity: 1, transition: { duration: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
               <ReaderView content={content} readingLanguage={readingLanguage} onFinish={handleFinishReading} onBack={() => setAppState('input')} />
@@ -75,9 +73,8 @@ function App() {
             <motion.div
               key="quiz"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              animate={{ opacity: 1, transition: { duration: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
               <QuizView content={content} onRestart={handleRestart} onArena={handleGoToArena} />
@@ -87,9 +84,8 @@ function App() {
             <motion.div
               key="arena"
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              animate={{ opacity: 1, transition: { duration: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%' }}
             >
               <ArenaView onBack={() => setAppState('input')} />
