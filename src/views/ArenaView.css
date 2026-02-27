@@ -46,7 +46,7 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-right: 4px;
+    margin-right: 8px;
     white-space: nowrap;
 }
 
@@ -63,7 +63,7 @@
     font-weight: 700;
     color: #FF9500;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s;
     white-space: nowrap;
     -webkit-user-select: none;
     user-select: none;
@@ -136,11 +136,11 @@
 
     0%,
     100% {
-        opacity: 0.25;
+        opacity: 0.3;
     }
 
     50% {
-        opacity: 0.9;
+        opacity: 1;
     }
 }
 
@@ -157,8 +157,14 @@
     font-weight: 700;
     color: var(--text, #E8E8F4);
     white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
     -webkit-user-select: none;
     user-select: none;
+}
+
+.arena-level-badge:hover {
+    border-color: var(--accent, #7B6EF6);
 }
 
 /* Total XP */
@@ -191,7 +197,7 @@
     font-weight: 700;
     letter-spacing: .12em;
     text-transform: uppercase;
-    color: #7B6EF6;
+    color: var(--accent, #7B6EF6);
     margin-bottom: 6px;
 }
 
@@ -606,7 +612,7 @@
     border: 1px solid rgba(255, 214, 10, 0.35);
     border-radius: 14px;
     padding: 12px 18px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 214, 10, 0.1);
     -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
     transform: translateX(120%);

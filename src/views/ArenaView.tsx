@@ -341,7 +341,7 @@ export default function ArenaView({ onBack }: ArenaViewProps) {
 
                 {/* Gap note */}
                 <div className="arena-lb-gap-note">
-                    You're <strong style={{ color: '#7B6EF6' }}>
+                    You're <strong style={{ color: 'var(--accent)' }}>
                         {Math.max(0, 1890 - yourXP).toLocaleString()} XP
                     </strong> away from 3rd place 🚀
                 </div>
@@ -390,12 +390,12 @@ function ParticleSystem() {
 
 // ── Static data ───────────────────────────────────────────────
 const ACTION_CARDS = [
-    { id: 'correct', icon: '🧠', name: 'Correct Answer', sub: 'Quiz question complete', toastTitle: '✅ Correct!', xp: 15, isCorrect: true },
-    { id: 'perfect', icon: '🏆', name: 'Perfect Quiz', sub: 'All quiz answers correct', toastTitle: '🏆 Perfect Score!', xp: 50, isCorrect: true },
-    { id: 'feynman', icon: '🔬', name: 'Feynman Test', sub: 'Feynman explanation submitted', toastTitle: '🔬 Feynman Done!', xp: 20, isCorrect: true },
-    { id: 'voice', icon: '🎙', name: 'Voice Feynman', sub: 'Feynman by voice +bonus', toastTitle: '🎙 Voice Master!', xp: 25, isCorrect: true },
+    { id: 'correct', icon: '🧠', name: 'Correct Answer', sub: 'Quiz question', toastTitle: '✅ Correct!', xp: 15, isCorrect: true },
+    { id: 'perfect', icon: '🏆', name: 'Perfect Quiz', sub: 'All answers correct', toastTitle: '🏆 Perfect Score!', xp: 50, isCorrect: true },
+    { id: 'feynman', icon: '🔬', name: 'Feynman Test', sub: 'Explain in your words', toastTitle: '🔬 Feynman Done!', xp: 20, isCorrect: true },
+    { id: 'voice', icon: '🎙', name: 'Voice Feynman', sub: 'Speak your explanation', toastTitle: '🎙 Voice Master!', xp: 25, isCorrect: true },
     { id: 'retry', icon: '💪', name: 'Retry & Improve', sub: 'Failed then tried again', toastTitle: '💪 Resilience!', xp: 10, isCorrect: false },
-    { id: 'reading', icon: '📖', name: 'Reading Session', sub: 'Reading session complete', toastTitle: '📖 Session Done!', xp: 10, isCorrect: false },
+    { id: 'reading', icon: '📖', name: 'Reading Session', sub: 'Complete a reading', toastTitle: '📖 Session Done!', xp: 10, isCorrect: false },
 ];
 
 const LEADERBOARD = [
