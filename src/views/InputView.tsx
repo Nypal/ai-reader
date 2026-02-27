@@ -8,6 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
+    onArena?: () => void;
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -55,7 +56,7 @@ const initialTestState: SystemTestState = {
     logMessage: null,
 };
 
-export default function InputView({ onStart }: InputViewProps) {
+export default function InputView({ onStart, onArena }: InputViewProps) {
     const [text, setText] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
@@ -407,6 +408,13 @@ export default function InputView({ onStart }: InputViewProps) {
             <div className="iv-theme-label" aria-hidden="true">
                 {THEMES.find(t => t.id === theme)?.label ?? 'Night'}
             </div>
+
+            {/* ── Arena shortcut ── */}
+            {onArena && (
+                <button className="iv-arena-btn" onClick={onArena} aria-label="Go to Arena">
+                    🏆 Arena
+                </button>
+            )}
 
             {/* ── Diagnostics (hidden) ── */}
             {showTests && (

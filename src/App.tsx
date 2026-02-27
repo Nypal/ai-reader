@@ -4,10 +4,11 @@ import Header from './components/Header';
 import InputView from "./views/InputView";
 import ReaderView from "./views/ReaderView";
 import QuizView from "./views/QuizView";
+import ArenaView from "./views/ArenaView";
 
 import './App.css';
 
-export type AppState = 'input' | 'reading' | 'quiz';
+export type AppState = 'input' | 'reading' | 'quiz' | 'arena';
 
 function App() {
   const [appState, setAppState] = useState<AppState>('input');
@@ -37,10 +38,14 @@ function App() {
     setAppState('input');
   };
 
+  const handleGoToArena = () => {
+    setAppState('arena');
+  };
+
   return (
     <div className="app-layout">
-      {appState !== 'input' && <Header />}
-      <main className="main-content">
+      {appState !== 'input' && appState !== 'arena' && <Header />}
+      <main className={`main-content${appState === 'arena' ? ' main-arena' : ''}`}>
         <AnimatePresence mode="wait">
           {appState === 'input' && (
             <motion.div
@@ -51,7 +56,7 @@ function App() {
               transition={{ duration: 0.3 }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <InputView onStart={handleStartReading} />
+              <InputView onStart={handleStartReading} onArena={handleGoToArena} />
             </motion.div>
           )}
           {appState === 'reading' && (
@@ -75,7 +80,19 @@ function App() {
               transition={{ duration: 0.3 }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <QuizView content={content} onRestart={handleRestart} />
+              <QuizView content={content} onRestart={handleRestart} onArena={handleGoToArena} />
+            </motion.div>
+          )}
+          {appState === 'arena' && (
+            <motion.div
+              key="arena"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: '100%' }}
+            >
+              <ArenaView onBack={() => setAppState('input')} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -15,6 +15,11 @@
   justify-content: center;
 }
 
+.main-content.main-arena {
+  padding: 0;
+  justify-content: flex-start;
+}
+
 .view-container {
   width: 100%;
   max-width: calc(var(--reader-max-width) + 2rem);

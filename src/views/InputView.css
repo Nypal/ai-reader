@@ -213,7 +213,7 @@
 
 .iv-input-wrap:focus-within .iv-input-inner {
     border-color: transparent;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--input-focus-bg);
 }
 
 .iv-textarea {
@@ -255,7 +255,7 @@
     padding: 6px 14px;
     border-radius: 100px;
     border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 500;
@@ -295,7 +295,7 @@
 /* Mode */
 .iv-mode-toggle {
     display: flex;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 100px;
     padding: 3px;
@@ -501,7 +501,7 @@
 }
 
 .iv-vopt:not(.sel) .iv-vbar {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--text-light);
 }
 
 .iv-vopt-info {
@@ -534,7 +534,7 @@
 /* Language */
 .iv-lang-toggle {
     display: inline-flex;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 100px;
     padding: 3px;
@@ -888,4 +888,33 @@
     transition: color 0.4s;
     z-index: 10;
     pointer-events: none;
+}
+
+/* ── Arena shortcut button ── */
+.iv-arena-btn {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 100px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    z-index: 10;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+
+.iv-arena-btn:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent2);
 }

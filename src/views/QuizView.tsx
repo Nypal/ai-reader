@@ -6,6 +6,7 @@ import './QuizView.css';
 interface QuizViewProps {
     content: string;
     onRestart: () => void;
+    onArena?: () => void;
 }
 
 interface Question {
@@ -114,7 +115,7 @@ const BADGE_TYPES: Record<string, { cls: string; label: string }> = {
 
 
 // ── Main Component ───────────────────────────────────────────────
-export default function QuizView({ content, onRestart }: QuizViewProps) {
+export default function QuizView({ content, onRestart, onArena }: QuizViewProps) {
     const [phase, setPhase] = useState<Phase>('quiz');
     const [quizData, setQuizData] = useState<QuizData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -704,6 +705,12 @@ export default function QuizView({ content, onRestart }: QuizViewProps) {
                 <button className="qz-btn-secondary" onClick={onRestart}>
                     ↩ Read Something New
                 </button>
+
+                {onArena && (
+                    <button className="qz-btn-arena" onClick={onArena}>
+                        🏆 Enter Arena
+                    </button>
+                )}
 
                 <button
                     className="qz-back-btn"
