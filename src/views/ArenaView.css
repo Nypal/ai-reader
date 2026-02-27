@@ -1,0 +1,871 @@
+/* ═══════════════════════════════════════════════════════════
+   ArenaView.css  —  Learning Arena / Gamification Screen
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Page shell ─────────────────────────────────────────────── */
+.arena-page {
+    position: relative;
+    min-height: 100vh;
+    width: 100%;
+    overflow-x: hidden;
+    background: var(--bg, #070710);
+    font-family: 'DM Sans', 'Inter', sans-serif;
+    color: var(--text, #E8E8F4);
+}
+
+.arena-bg-glow {
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 60% 30% at 50% 0%, rgba(123, 110, 246, 0.09), transparent 60%),
+        radial-gradient(ellipse 30% 20% at 90% 70%, rgba(255, 214, 10, 0.04), transparent 55%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── HUD ────────────────────────────────────────────────────── */
+.arena-hud {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(7, 7, 16, 0.88);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.arena-hud-brand {
+    font-family: 'Playfair Display', 'Georgia', serif;
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #F0F0F8, #7B6EF6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+/* Streak */
+.arena-streak-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    background: rgba(255, 149, 0, 0.10);
+    border: 1px solid rgba(255, 149, 0, 0.25);
+    font-size: 13px;
+    font-weight: 700;
+    color: #FF9500;
+    cursor: pointer;
+    transition: background 0.2s;
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.arena-streak-pill:hover {
+    background: rgba(255, 149, 0, 0.18);
+}
+
+.streak-fire {
+    display: inline-block;
+    animation: arena-flicker 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes arena-flicker {
+    from {
+        transform: scale(1) rotate(-3deg);
+    }
+
+    to {
+        transform: scale(1.15) rotate(3deg);
+    }
+}
+
+/* XP Bar section */
+.arena-xp-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 80px;
+}
+
+.arena-xp-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(232, 232, 244, 0.42);
+}
+
+.arena-xp-bar-wrap {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+.arena-xp-bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+    transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+}
+
+.arena-xp-bar-fill::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    background: rgba(255, 255, 255, 0.5);
+    animation: arena-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes arena-shimmer {
+
+    0%,
+    100% {
+        opacity: 0.25;
+    }
+
+    50% {
+        opacity: 0.9;
+    }
+}
+
+/* Level Badge */
+.arena-level-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text, #E8E8F4);
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Total XP */
+.arena-total-xp {
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFD60A;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+/* ── Main content ────────────────────────────────────────────── */
+.arena-main {
+    position: relative;
+    z-index: 1;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+}
+
+/* ── Section Header ─────────────────────────────────────────── */
+.arena-section-head {
+    margin-bottom: 20px;
+}
+
+.arena-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #7B6EF6;
+    margin-bottom: 6px;
+}
+
+.arena-section-title {
+    font-family: 'Playfair Display', 'Georgia', serif;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.arena-section-sub {
+    font-size: 13px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-top: 4px;
+    line-height: 1.5;
+}
+
+/* ── Daily Quest Card ───────────────────────────────────────── */
+.arena-quest-card {
+    background: linear-gradient(135deg, rgba(123, 110, 246, 0.08), rgba(155, 139, 255, 0.04));
+    border: 1px solid rgba(123, 110, 246, 0.2);
+    border-radius: 18px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.arena-quest-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+}
+
+.arena-quest-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.arena-quest-title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.arena-quest-reward {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFD60A;
+    background: rgba(255, 214, 10, 0.12);
+    border: 1px solid rgba(255, 214, 10, 0.2);
+    padding: 4px 10px;
+    border-radius: 100px;
+}
+
+.arena-quest-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.arena-quest-task {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: rgba(232, 232, 244, 0.42);
+    transition: color 0.3s;
+}
+
+.arena-quest-task.done {
+    color: var(--text, #E8E8F4);
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.arena-qt-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.arena-qt-check.done {
+    background: #34C759;
+    border-color: #34C759;
+    color: white;
+}
+
+.arena-quest-progress {
+    margin-top: 14px;
+}
+
+.arena-qp-label {
+    font-size: 11px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.arena-qp-bar {
+    height: 5px;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.arena-qp-fill {
+    height: 100%;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Action Cards ───────────────────────────────────────────── */
+.arena-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.arena-action-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 16px;
+    padding: 18px;
+    cursor: pointer;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+    text-align: left;
+}
+
+.arena-action-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 80% at 50% 0%, rgba(123, 110, 246, 0.12), transparent);
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+.arena-action-card:hover {
+    border-color: rgba(123, 110, 246, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.arena-action-card:hover::before {
+    opacity: 1;
+}
+
+.arena-action-card:active {
+    transform: scale(0.97);
+}
+
+.ac-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+    line-height: 1;
+}
+
+.ac-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 3px;
+}
+
+.ac-sub {
+    font-size: 11px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-bottom: 10px;
+}
+
+.ac-xp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #FFD60A;
+    background: rgba(255, 214, 10, 0.12);
+    padding: 3px 8px;
+    border-radius: 100px;
+}
+
+/* ── Badges ─────────────────────────────────────────────────── */
+.arena-badges-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.arena-badge-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.04);
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.arena-badge-item:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 214, 10, 0.3);
+}
+
+.arena-badge-item.locked {
+    opacity: 0.35;
+    filter: grayscale(1);
+    cursor: default;
+}
+
+.arena-badge-item.locked:hover {
+    transform: none;
+    border-color: rgba(255, 255, 255, 0.07);
+}
+
+.arena-badge-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+}
+
+.arena-badge-icon.gold {
+    background: linear-gradient(135deg, rgba(255, 214, 10, 0.2), rgba(255, 214, 10, 0.05));
+    border: 1px solid rgba(255, 214, 10, 0.3);
+}
+
+.arena-badge-icon.violet {
+    background: linear-gradient(135deg, rgba(123, 110, 246, 0.12), transparent);
+    border: 1px solid rgba(123, 110, 246, 0.3);
+}
+
+.arena-badge-icon.green {
+    background: linear-gradient(135deg, rgba(52, 199, 89, 0.15), transparent);
+    border: 1px solid rgba(52, 199, 89, 0.3);
+}
+
+.arena-badge-icon.cyan {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), transparent);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.arena-badge-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(232, 232, 244, 0.42);
+    text-align: center;
+    line-height: 1.3;
+}
+
+.arena-badge-item:not(.locked) .arena-badge-name {
+    color: var(--text, #E8E8F4);
+}
+
+/* ── Leaderboard ────────────────────────────────────────────── */
+.arena-leaderboard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.arena-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    transition: background 0.2s;
+}
+
+.arena-lb-row.you {
+    background: rgba(123, 110, 246, 0.12);
+    border-color: rgba(123, 110, 246, 0.3);
+}
+
+.arena-lb-rank {
+    width: 28px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 800;
+    color: rgba(232, 232, 244, 0.20);
+}
+
+.arena-lb-rank.top1 {
+    color: #FFD60A;
+}
+
+.arena-lb-rank.top2 {
+    color: #C0C0C0;
+}
+
+.arena-lb-rank.top3 {
+    color: #CD7F32;
+}
+
+.arena-lb-rank.you {
+    color: #7B6EF6;
+    font-weight: 900;
+}
+
+.arena-lb-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+}
+
+.arena-lb-info {
+    flex: 1;
+}
+
+.arena-lb-name {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.arena-lb-you-tag {
+    font-size: 10px;
+    color: #7B6EF6;
+    font-weight: 600;
+    margin-left: 6px;
+}
+
+.arena-lb-level {
+    font-size: 11px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-top: 1px;
+}
+
+.arena-lb-xp {
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFD60A;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.arena-lb-gap-note {
+    text-align: center;
+    font-size: 12px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-top: 4px;
+}
+
+/* ── Back button ────────────────────────────────────────────── */
+.arena-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: rgba(232, 232, 244, 0.42);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 8px 0;
+    margin-bottom: 20px;
+    transition: color 0.2s;
+    font-family: inherit;
+}
+
+.arena-back-btn:hover {
+    color: var(--text, #E8E8F4);
+}
+
+/* ── XP Toast ───────────────────────────────────────────────── */
+.arena-xp-toast {
+    position: fixed;
+    top: 80px;
+    right: 24px;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(7, 7, 16, 0.95);
+    border: 1px solid rgba(255, 214, 10, 0.35);
+    border-radius: 14px;
+    padding: 12px 18px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    transform: translateX(120%);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    max-width: 260px;
+    pointer-events: none;
+}
+
+.arena-xp-toast.show {
+    transform: translateX(0);
+}
+
+.toast-icon-box {
+    font-size: 24px;
+}
+
+.toast-body {
+    flex: 1;
+}
+
+.toast-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFD60A;
+    margin-bottom: 2px;
+}
+
+.toast-sub {
+    font-size: 12px;
+    color: rgba(232, 232, 244, 0.42);
+}
+
+/* ── Combo Badge ────────────────────────────────────────────── */
+.arena-combo-badge {
+    position: fixed;
+    top: 80px;
+    left: 24px;
+    z-index: 200;
+    padding: 10px 18px;
+    border-radius: 100px;
+    background: linear-gradient(135deg, #FF9500, #FF6B00);
+    color: white;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 4px 20px rgba(255, 149, 0, 0.5);
+    transform: translateY(-80px) scale(0.7);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+}
+
+.arena-combo-badge.show {
+    transform: translateY(0) scale(1);
+    animation: arena-comboBounce 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes arena-comboBounce {
+    0% {
+        transform: scale(0.5);
+    }
+
+    60% {
+        transform: scale(1.12);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ── Floating XP number ─────────────────────────────────────── */
+.arena-float-xp {
+    position: fixed;
+    z-index: 250;
+    font-family: 'Playfair Display', 'Georgia', serif;
+    font-size: 22px;
+    font-weight: 900;
+    color: #FFD60A;
+    pointer-events: none;
+    text-shadow: 0 0 20px rgba(255, 214, 10, 0.4);
+    animation: arena-floatUp 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    white-space: nowrap;
+}
+
+@keyframes arena-floatUp {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateY(-40px) scale(1.2);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-80px) scale(0.8);
+    }
+}
+
+/* ── Level-Up Overlay ───────────────────────────────────────── */
+.arena-levelup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(7, 7, 16, 0.93);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+}
+
+.arena-levelup-overlay.show {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.arena-levelup-card {
+    text-align: center;
+    padding: 40px;
+    animation: arena-levelIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes arena-levelIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.arena-levelup-sparkle {
+    font-size: 52px;
+    margin-bottom: 16px;
+    display: block;
+    animation: arena-spin 3s linear infinite;
+}
+
+@keyframes arena-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.arena-levelup-title {
+    font-family: 'Playfair Display', 'Georgia', serif;
+    font-size: 42px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #FFD60A, #FFB800);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    line-height: 1.1;
+}
+
+.arena-levelup-name {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.arena-levelup-sub {
+    font-size: 14px;
+    color: rgba(232, 232, 244, 0.42);
+    margin-bottom: 28px;
+}
+
+.arena-levelup-btn {
+    padding: 14px 36px;
+    border-radius: 12px;
+    border: none;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    background: linear-gradient(135deg, #FFD60A, #FFB800);
+    color: #1A1200;
+    box-shadow: 0 4px 20px rgba(255, 214, 10, 0.4);
+    transition: all 0.22s;
+}
+
+.arena-levelup-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(255, 214, 10, 0.5);
+}
+
+/* ── Confetti Particles ─────────────────────────────────────── */
+.arena-particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 301;
+}
+
+.arena-particle {
+    position: absolute;
+    animation: arena-fall linear forwards;
+}
+
+@keyframes arena-fall {
+    0% {
+        transform: translateY(-20px) rotate(0deg);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(110vh) rotate(720deg);
+        opacity: 0;
+    }
+}
+
+/* ── Divider ────────────────────────────────────────────────── */
+.arena-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.07);
+    margin: 20px 0;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .arena-hud {
+        gap: 10px;
+        padding: 10px 14px;
+    }
+
+    .arena-hud-brand {
+        font-size: 16px;
+    }
+
+    .arena-streak-pill {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+
+    .arena-actions-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .arena-badges-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+    }
+
+    .arena-main {
+        padding: 20px 16px 60px;
+    }
+
+    .arena-total-xp {
+        display: none;
+    }
+}
