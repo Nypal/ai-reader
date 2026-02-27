@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Settings2, SkipBack, SkipForward, Play, Pause, Activity } from 'lucide-react';
+import { ArrowLeft, SkipBack, SkipForward, Play, Pause } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
 import { AuditService } from '../services/AuditService';
-import AudioVisualizer from '../components/AudioVisualizer';
 import './ReaderView.css';
 
 interface ReaderViewProps {
@@ -65,7 +63,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     };
 
     // Technical Audit State
-    const [ttsLatencyAvg, setTtsLatencyAvg] = useState(0);
+    const [_ttsLatencyAvg, setTtsLatencyAvg] = useState(0);
+    void _ttsLatencyAvg; // used by setTtsLatencyAvg in fetchTts
     const [isSlowBackend, setIsSlowBackend] = useState(false);
 
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -492,10 +491,6 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         }
     };
 
-    const resetPlay = () => {
-        stop();
-    };
-
     const handleSeek = (newIdx: number) => {
         replayCountRef.current += 1;
         const wasPlaying = playbackState === 'playing' || playbackState === 'loading';
@@ -521,193 +516,209 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         onBack();
     };
 
-    const renderText = () => {
-        return sentences.map((sentence, idx) => {
-            const isHighlighted = idx === currentSentenceIdx;
-            const words = sentence.split(/(\s+)/); // Keep delimiters to preserve spacing
-            const wordCount = words.filter(w => w.trim().length > 0).length;
-            const activeWordIdx = isHighlighted ? Math.floor(wordCount * sentenceProgress) : -1;
+    const [isScrolled, setIsScrolled] = useState(false);
+    const [theme, setTheme] = useState<'night' | 'light' | 'sepia' | 'forest'>('night');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-            let currentWordCount = 0;
+    useEffect(() => {
+        const storedTheme = (localStorage.getItem('playlearn_theme') as string) || 'night';
+        setTheme(storedTheme as 'night' | 'light' | 'sepia' | 'forest');
+        if (storedTheme !== 'night') {
+            document.documentElement.setAttribute('data-theme', storedTheme);
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
 
-            const wordElements = words.map((chunk, chunkIdx) => {
-                if (chunk.trim().length === 0) {
-                    return <span key={chunkIdx} className="space-chunk">{chunk}</span>;
-                }
+        const handleScroll = () => {
+            setIsScrolled(window.scrollY > 20);
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
 
-                const isWordActive = isHighlighted && currentWordCount === activeWordIdx;
-                const isWordPast = isHighlighted && currentWordCount < activeWordIdx;
-
-                let wordClass = "word";
-                if (isWordActive) wordClass += " active-word";
-                else if (isWordPast) wordClass += " past-word";
-                else wordClass += " future-word";
-
-                currentWordCount++;
-
-                return (
-                    <span key={chunkIdx} className={wordClass}>
-                        {chunk}
-                    </span>
-                );
-            });
-
-            return (
-                <motion.span
-                    key={idx}
-                    ref={(el) => { sentenceRefs.current[idx] = el; }}
-                    className="sentence"
-                    data-active={isHighlighted ? "true" : undefined}
-                    onClick={() => handleSeek(idx)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Play sentence ${idx + 1}`}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleSeek(idx);
-                        }
-                    }}
-                    initial={{ opacity: 0.5, y: 0 }}
-                    animate={isHighlighted ? {
-                        opacity: 1,
-                        y: -1,
-                        backgroundColor: "rgba(139, 92, 246, 0.14)",
-                        borderLeftColor: "var(--primary)"
-                    } : {
-                        opacity: 0.5,
-                        y: 0,
-                        backgroundColor: "transparent",
-                        borderLeftColor: "transparent"
-                    }}
-                    transition={{
-                        duration: 0.3,
-                        ease: "easeInOut"
-                    }}
-                >
-                    {wordElements}
-                </motion.span>
-            );
-        });
+    const handleSetTheme = (newTheme: 'night' | 'light' | 'sepia' | 'forest') => {
+        setTheme(newTheme);
+        localStorage.setItem('playlearn_theme', newTheme);
+        if (newTheme !== 'night') {
+            document.documentElement.setAttribute('data-theme', newTheme);
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
     };
 
+    const handleSeekClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        const bar = e.currentTarget;
+        const pct = e.nativeEvent.offsetX / bar.offsetWidth;
+        const idx = Math.round(pct * (sentences.length - 1));
+        handleSeek(Math.max(0, Math.min(idx, sentences.length - 1)));
+    };
+
+    const overallProgressPct = sentences.length > 1
+        ? (Math.max(0, currentSentenceIdx) / (sentences.length - 1)) * 100
+        : 0;
+
     return (
-        <div className="view-container reader-view">
-            <div className="progress-container top-progress">
-                <input
-                    type="range"
-                    className="progress-slider"
-                    min={0}
-                    max={sentences.length > 0 ? sentences.length - 1 : 0}
-                    value={Math.max(0, currentSentenceIdx)}
-                    style={{ backgroundSize: `${sentences.length ? (Math.max(0, currentSentenceIdx) / (sentences.length - 1)) * 100 : 0}% 100%` }}
-                    onChange={(e) => handleSeek(Number(e.target.value))}
-                    aria-valuemin={0}
-                    aria-valuemax={sentences.length > 0 ? sentences.length - 1 : 0}
-                    aria-valuenow={Math.max(0, currentSentenceIdx)}
-                    aria-label="Reading progress"
-                    disabled={sentences.length === 0}
+        <div className="reader-page">
+            <div className="ambient">
+                <div className="glow-1"></div>
+                <div className="glow-2"></div>
+            </div>
+
+            {/* PROGRESS LINE */}
+            <div className="reader-progress-bar">
+                <div
+                    className="reader-progress-fill"
+                    style={{ '--reader-progress-width': `${overallProgressPct}%` } as React.CSSProperties}
                 />
             </div>
 
-            <div className="reader-header" style={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 1fr) auto minmax(100px, 1fr)', alignItems: 'center' }}>
-                <div style={{ justifySelf: 'start' }}>
-                    <button className="back-btn" onClick={handleBack}>
-                        <ArrowLeft size={20} />
-                        <span>Back</span>
-                    </button>
+            {/* TOP BAR */}
+            <nav className={`reader-topbar ${isScrolled ? 'scrolled' : ''}`}>
+                <button className="reader-back-btn" onClick={handleBack}>
+                    <ArrowLeft size={16} /> Back to Start
+                </button>
+                <div className="reader-topbar-right">
+                    <div className="theme-dots">
+                        <div
+                            className={`tdot tdot-night ${theme === 'night' ? 'active' : ''}`}
+                            onClick={() => handleSetTheme('night')}
+                            data-tip="Night"
+                        />
+                        <div
+                            className={`tdot tdot-light ${theme === 'light' ? 'active' : ''}`}
+                            onClick={() => handleSetTheme('light')}
+                            data-tip="Light"
+                        />
+                        <div
+                            className={`tdot tdot-sepia ${theme === 'sepia' ? 'active' : ''}`}
+                            onClick={() => handleSetTheme('sepia')}
+                            data-tip="Sepia"
+                        />
+                        <div
+                            className={`tdot tdot-forest ${theme === 'forest' ? 'active' : ''}`}
+                            onClick={() => handleSetTheme('forest')}
+                            data-tip="Forest"
+                        />
+                    </div>
                 </div>
+            </nav>
 
-                <div style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <AudioVisualizer
-                        audioElement={audioRef.current}
-                        isPlaying={playbackState === 'playing'}
-                        onClick={togglePlay}
-                    />
-                </div>
-
-                <div className="header-actions" style={{ justifySelf: 'end', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {isSlowBackend && (
-                        <div className="slow-backend-warning glass-panel" style={{ color: 'var(--warning)', fontSize: '0.75rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid rgba(234, 179, 8, 0.2)' }} title={`High Latency Detected (~${Math.round(ttsLatencyAvg)}ms)`}>
-                            <Activity size={12} /> <span className="hide-mobile">Slow Connection</span>
-                        </div>
-                    )}
-                    <button className="settings-btn" title="Audio Settings">
-                        <Settings2 size={20} />
-                    </button>
-                </div>
-            </div>
-
-
-
+            {/* CONTENT */}
             <div className="reader-content" data-has-active={currentSentenceIdx >= 0}>
-                <p className="reading-text">
-                    {renderText()}
-                </p>
+                <div className="sentences-container">
+                    {sentences.map((sentence, idx) => {
+                        const isHighlighted = idx === currentSentenceIdx;
+                        const words = sentence.split(/(\s+)/);
+                        const wordCount = words.filter(w => w.trim().length > 0).length;
+                        const activeWordIdx = isHighlighted ? Math.floor(wordCount * sentenceProgress) : -1;
+                        let currentWordCount = 0;
+
+                        const wordElements = words.map((chunk, chunkIdx) => {
+                            if (chunk.trim().length === 0) {
+                                return <span key={chunkIdx}>{chunk}</span>;
+                            }
+                            const isWordActive = isHighlighted && currentWordCount === activeWordIdx;
+                            const isWordPast = (isHighlighted && currentWordCount < activeWordIdx) || (idx < currentSentenceIdx);
+
+                            let wordClass = 'word';
+                            if (isWordActive) wordClass += ' current';
+                            else if (isWordPast) wordClass += ' spoken';
+
+                            currentWordCount++;
+                            return <span key={chunkIdx} className={wordClass}>{chunk}</span>;
+                        });
+
+                        return (
+                            <div
+                                key={idx}
+                                ref={(el) => { sentenceRefs.current[idx] = el; }}
+                                className={`sentence ${isHighlighted ? 'active' : ''}`}
+                                onClick={() => handleSeek(idx)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Play sentence ${idx + 1}`}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        handleSeek(idx);
+                                    }
+                                }}
+                            >
+                                {wordElements}
+                            </div>
+                        );
+                    })}
+                </div>
                 {lastError && (
-                    <div style={{ color: 'red', marginTop: '1rem', fontSize: '0.9rem' }}>
+                    <div className="reader-error">
                         Error: {lastError}
                     </div>
                 )}
             </div>
 
-            <div className="reader-controls-pill">
-                <div className="pill-left">
-                    <button
-                        className="control-btn"
-                        onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))}
-                        disabled={currentSentenceIdx <= 0}
-                        aria-label="Previous sentence"
-                    >
-                        <SkipBack size={20} />
-                    </button>
-                    <button
-                        className="control-btn play-btn"
-                        onClick={togglePlay}
-                        aria-label="Play or Pause"
-                    >
-                        {playbackState === 'playing' ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
-                    </button>
-                    <button
-                        className="control-btn"
-                        onClick={() => handleSeek(Math.min(sentences.length - 1, currentSentenceIdx + 1))}
-                        disabled={currentSentenceIdx >= sentences.length - 1}
-                        aria-label="Next sentence"
-                    >
-                        <SkipForward size={20} />
-                    </button>
+            {/* PLAYER BAR */}
+            <div className="player">
+                <button
+                    className="p-btn"
+                    onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))}
+                    disabled={currentSentenceIdx <= 0}
+                    aria-label="Previous sentence"
+                >
+                    <SkipBack size={16} />
+                </button>
+                <button
+                    className="p-play"
+                    onClick={togglePlay}
+                    aria-label="Play or Pause"
+                >
+                    {playbackState === 'playing' ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="play-icon-offset" />}
+                </button>
+                <button
+                    className="p-btn"
+                    onClick={() => handleSeek(Math.min(sentences.length - 1, currentSentenceIdx + 1))}
+                    disabled={currentSentenceIdx >= sentences.length - 1}
+                    aria-label="Next sentence"
+                >
+                    <SkipForward size={16} />
+                </button>
+
+                <div className="p-divider"></div>
+
+                <div className="p-speed" onClick={handleSpeedToggle} aria-label="Toggle Speed">
+                    {speed}×
                 </div>
 
-                <div className="pill-right">
-                    <button className="speed-toggle" onClick={handleSpeedToggle} aria-label="Toggle Speed">
-                        <AnimatePresence mode="popLayout">
-                            <motion.span
-                                key={speed}
-                                initial={{ y: 15, opacity: 0 }}
-                                animate={{ y: 0, opacity: 1 }}
-                                exit={{ y: -15, opacity: 0 }}
-                                transition={{ duration: 0.15, ease: "easeInOut" }}
-                                style={{ display: 'inline-block' }}
-                            >
-                                {speed}x
-                            </motion.span>
-                        </AnimatePresence>
-                    </button>
-                    <div className="voice-selector">
-                        <select
-                            value={voiceUI}
-                            onChange={(e) => handleVoiceChange(e.target.value as TTSVoice)}
-                            className="voice-select"
-                            aria-label="Narrator voice"
-                        >
-                            <option value="onyx">Onyx</option>
-                            <option value="echo">Echo</option>
-                            <option value="fable">Fable</option>
-                            <option value="nova">Nova</option>
-                            <option value="shimmer">Shimmer</option>
-                            <option value="alloy">Alloy</option>
-                        </select>
+                <div className="p-divider"></div>
+
+                <div className="p-voice" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
+                    <div className={`p-wave ${playbackState === 'playing' ? 'playing' : ''}`}>
+                        <div className="pw"></div><div className="pw"></div>
+                        <div className="pw"></div><div className="pw"></div>
                     </div>
+                    {voiceUI}
+
+                    {/* Voice Selection Dropdown */}
+                    <div className={`p-voice-dropdown ${isDropdownOpen ? 'open' : ''}`}>
+                        {(['onyx', 'echo', 'nova', 'shimmer'] as TTSVoice[]).map(v => (
+                            <div
+                                key={v}
+                                className={`p-vopt ${voiceUI === v ? 'sel' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleVoiceChange(v);
+                                    setIsDropdownOpen(false);
+                                }}
+                            >
+                                {v}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="p-divider" style={{ marginRight: '8px' }}></div>
+
+                <div className="p-progress" onClick={handleSeekClick}>
+                    <div className="p-fill" style={{ '--p-fill-width': `${overallProgressPct}%` } as React.CSSProperties}></div>
                 </div>
             </div>
         </div>

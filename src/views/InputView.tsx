@@ -1,11 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
-import { CheckCircle2, XCircle, Loader2, Sun, Moon, Coffee, FileDown, BookOpen } from 'lucide-react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { CheckCircle2, XCircle, Loader2, Paperclip } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-// Setting up the worker for pdf.js in Vite
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
 import './InputView.css';
 
-// Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface InputViewProps {
@@ -13,17 +11,33 @@ interface InputViewProps {
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
+type AppTheme = 'night' | 'light' | 'sepia' | 'forest';
 
 const TTS_VOICES = [
-    { id: 'onyx', name: 'Onyx', desc: '👨 Deep authoritative male' },
-    { id: 'echo', name: 'Echo', desc: '👨 Calm clear male' },
-    { id: 'fable', name: 'Fable', desc: '👨 Warm storytelling male' },
-    { id: 'nova', name: 'Nova', desc: '👩 Clear friendly female' },
-    { id: 'shimmer', name: 'Shimmer', desc: '👩 Soft gentle female' },
-    { id: 'alloy', name: 'Alloy', desc: '🧑 Neutral balanced' }
+    { id: 'onyx', name: 'Onyx', desc: 'Deep · Authoritative' },
+    { id: 'echo', name: 'Echo', desc: 'Calm · Precise' },
+    { id: 'fable', name: 'Fable', desc: 'Warm · Storytelling' },
+    { id: 'nova', name: 'Nova', desc: 'Clear · Friendly' },
+    { id: 'shimmer', name: 'Shimmer', desc: 'Soft · Gentle' },
+    { id: 'alloy', name: 'Alloy', desc: 'Neutral · Balanced' },
 ] as const;
 
 type TTSVoice = typeof TTS_VOICES[number]['id'];
+
+const THEMES: { id: AppTheme; label: string; dot: string }[] = [
+    { id: 'night', label: 'Night', dot: '#0D0D1A' },
+    { id: 'light', label: 'Light', dot: '#F2F0EC' },
+    { id: 'sepia', label: 'Sepia', dot: '#E8DDD0' },
+    { id: 'forest', label: 'Forest', dot: '#0A110D' },
+];
+
+function applyTheme(theme: AppTheme) {
+    if (theme === 'night') {
+        document.documentElement.removeAttribute('data-theme');
+    } else {
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+}
 
 interface SystemTestState {
     backend: { status: TestStatus; error?: string; fix?: string };
@@ -38,45 +52,65 @@ const initialTestState: SystemTestState = {
     openai: { status: 'idle' },
     tts: { status: 'idle' },
     playback: { status: 'idle' },
-    logMessage: null
+    logMessage: null,
 };
 
 export default function InputView({ onStart }: InputViewProps) {
     const [text, setText] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
+    const [voiceOpen, setVoiceOpen] = useState(false);
 
-    const [mode, setMode] = useState<'read' | 'learn'>(() => {
-        return (localStorage.getItem('playlearn_mode') as 'read' | 'learn') || 'learn';
+    const [mode, setMode] = useState<'read' | 'learn'>(() =>
+        (localStorage.getItem('playlearn_mode') as 'read' | 'learn') || 'read'
+    );
+
+    const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() =>
+        (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo'
+    );
+
+    const [theme, setThemeState] = useState<AppTheme>(() => {
+        const saved = localStorage.getItem('playlearn_theme') as AppTheme | null;
+        const valid = saved && THEMES.some(t => t.id === saved) ? saved : 'night';
+        applyTheme(valid);
+        return valid;
     });
+
+    const handleTheme = (t: AppTheme) => {
+        setThemeState(t);
+        localStorage.setItem('playlearn_theme', t);
+        applyTheme(t);
+    };
+
+    // Language slider
+    const langEnRef = useRef<HTMLButtonElement>(null);
+    const langFrRef = useRef<HTMLButtonElement>(null);
+    const [sliderStyle, setSliderStyle] = useState<{ left: string; width: string }>({ left: '3px', width: '0px' });
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const audioTestRef = useRef<HTMLAudioElement | null>(null);
-
+    const voiceDropRef = useRef<HTMLDivElement>(null);
     const [testState, setTestState] = useState<SystemTestState>(initialTestState);
     const [showTests, setShowTests] = useState(false);
 
-    const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() => {
-        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo';
-    });
+    useLayoutEffect(() => {
+        const ref = readingLanguage === 'english' ? langEnRef : langFrRef;
+        if (!ref.current) return;
+        const { offsetLeft, offsetWidth } = ref.current;
+        setSliderStyle({ left: `${offsetLeft}px`, width: `${offsetWidth}px` });
+    }, [readingLanguage]);
 
-    const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>(() => {
-        const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | 'sepia' | null;
-        if (savedTheme) return savedTheme;
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        return prefersDark ? 'dark' : 'light';
-    });
+    // Close voice dropdown on outside click
+    const handleOutsideClick = useCallback((e: MouseEvent) => {
+        if (voiceDropRef.current && !voiceDropRef.current.contains(e.target as Node)) {
+            setVoiceOpen(false);
+        }
+    }, []);
 
     useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
-    }, [theme]);
-    const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
-    const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-
-    const handlePlay = async () => {
-        if (!text.trim()) return;
-        onStart(text, mode, readingLanguage);
-    };
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+    }, [handleOutsideClick]);
 
     const handleModeSelect = (newMode: 'read' | 'learn') => {
         setMode(newMode);
@@ -86,151 +120,21 @@ export default function InputView({ onStart }: InputViewProps) {
     const handleVoiceSelect = (voiceId: TTSVoice) => {
         setSelectedVoice(voiceId);
         localStorage.setItem('playlearn_voice', voiceId);
+        setVoiceOpen(false);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const handlePreview = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (previewingVoice === selectedVoice) return;
-
-        try {
-            setPreviewingVoice(selectedVoice);
-            if (previewAudioRef.current) {
-                previewAudioRef.current.pause();
-                previewAudioRef.current.removeAttribute("src");
-            }
-
-            const textToSpeak = `Hi, I am ${selectedVoice}. This is my voice.`;
-            const res = await fetch('http://localhost:3001/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: textToSpeak, voice: selectedVoice, format: 'mp3' })
-            });
-
-            if (!res.ok) throw new Error('Preview failed');
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-
-            const audio = new Audio(url);
-            previewAudioRef.current = audio;
-
-            audio.onended = () => {
-                setPreviewingVoice(null);
-                URL.revokeObjectURL(url);
-            };
-            audio.onerror = () => {
-                setPreviewingVoice(null);
-                URL.revokeObjectURL(url);
-            };
-
-            await audio.play();
-
-        } catch (err) {
-            console.error("Preview error", err);
-            setPreviewingVoice(null);
-        }
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const runSystemCheck = async () => {
-        setShowTests(true);
-        setTestState({ ...initialTestState, backend: { status: 'running' } });
-
-        // 1. Backend Health Check
-        try {
-            const res = await fetch('http://localhost:3001/api/health');
-            if (!res.ok) throw new Error('Bad response');
-            const data = await res.json();
-
-            // Update Backend PASS, start OpenAI Check
-            setTestState(prev => ({
-                ...prev,
-                backend: { status: 'pass' },
-                openai: { status: 'running' }
-            }));
-
-            // 2. OpenAI Key Check
-            if (!data.keyLoaded) {
-                setTestState(prev => ({
-                    ...prev,
-                    openai: { status: 'fail', error: 'No API Key found.', fix: 'Add your OpenAI API key to backend/.env and restart server.js' },
-                    logMessage: 'GET /api/health returned keyLoaded: false'
-                }));
-                return;
-            }
-
-            setTestState(prev => ({
-                ...prev,
-                openai: { status: 'pass' },
-                tts: { status: 'running' }
-            }));
-
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            setTestState(prev => ({
-                ...prev,
-                backend: { status: 'fail', error: errorMessage, fix: 'Make sure you run `node server.js` in the backend folder.' },
-                logMessage: errorMessage
-            }));
-            return;
-        }
-
-        // 3. TTS Generation Check
-        let audioBlobUrl = '';
-        try {
-            const ttsRes = await fetch('http://localhost:3001/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: 'Test one two', voice: 'alloy' })
-            });
-
-            if (!ttsRes.ok) {
-                const errorData = await ttsRes.json().catch(() => ({}));
-                throw new Error(errorData.error || `HTTP ${ttsRes.status}`);
-            }
-
-            const blob = await ttsRes.blob();
-            if (blob.size === 0) throw new Error('Received empty audio buffer');
-
-            audioBlobUrl = URL.createObjectURL(blob);
-
-            setTestState(prev => ({
-                ...prev,
-                tts: { status: 'pass', bytes: blob.size },
-                playback: { status: 'running' }
-            }));
-
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            setTestState(prev => ({
-                ...prev,
-                tts: { status: 'fail', error: errorMessage, fix: 'Check your OpenAI account billing or API key validity.' },
-                logMessage: `POST /api/tts failed: ${errorMessage}`
-            }));
-            return;
-        }
-
-        // 4. Playback Check
-        try {
-            if (!audioTestRef.current) audioTestRef.current = new Audio();
-            audioTestRef.current.src = audioBlobUrl;
-
-            await audioTestRef.current.play();
-
-            setTestState(prev => ({
-                ...prev,
-                playback: { status: 'pass' },
-                logMessage: 'All systems green! Application is ready.'
-            }));
-        } catch (err: unknown) {
-            const errorName = err instanceof Error ? err.name : 'Error';
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            setTestState(prev => ({
-                ...prev,
-                playback: { status: 'fail', error: errorName, fix: 'You must interact with the page first (click anywhere) to allow browser audio AutoPlay.' },
-                logMessage: `Browser blocked playback: ${errorName} - ${errorMessage}`
-            }));
-        }
+    const handlePlay = (e: React.MouseEvent<HTMLButtonElement>) => {
+        if (!text.trim()) return;
+        // ripple
+        const btn = e.currentTarget;
+        const rect = btn.getBoundingClientRect();
+        const ripple = document.createElement('span');
+        ripple.className = 'iv-ripple';
+        const size = Math.max(btn.offsetWidth, btn.offsetHeight);
+        ripple.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - rect.left - size / 2}px;top:${e.clientY - rect.top - size / 2}px`;
+        btn.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+        onStart(text, mode, readingLanguage);
     };
 
     const extractTextFromPdf = async (file: File) => {
@@ -242,7 +146,9 @@ export default function InputView({ onStart }: InputViewProps) {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map((item) => ('str' in item ? (item as { str: string }).str : '')).join(' ');
+                const pageText = textContent.items
+                    .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+                    .join(' ');
                 fullText += pageText + '\n\n';
             }
             setText(fullText.trim());
@@ -260,12 +166,57 @@ export default function InputView({ onStart }: InputViewProps) {
         if (file.type === 'application/pdf') {
             extractTextFromPdf(file);
         } else if (file.type === 'text/plain') {
-            const text = await file.text();
-            setText(text);
+            const t = await file.text();
+            setText(t);
         } else {
             alert('Please upload a PDF or TXT file.');
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    // @ts-expect-error — kept for future diagnostics UI
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _runSystemCheck = async () => {
+        setShowTests(true);
+        setTestState({ ...initialTestState, backend: { status: 'running' } });
+        try {
+            const res = await fetch('http://localhost:3001/api/health');
+            if (!res.ok) throw new Error('Bad response');
+            const data = await res.json();
+            setTestState(prev => ({ ...prev, backend: { status: 'pass' }, openai: { status: 'running' } }));
+            if (!data.keyLoaded) {
+                setTestState(prev => ({ ...prev, openai: { status: 'fail', error: 'No API Key found.', fix: 'Add your OpenAI API key to backend/.env and restart server.js' }, logMessage: 'keyLoaded: false' }));
+                return;
+            }
+            setTestState(prev => ({ ...prev, openai: { status: 'pass' }, tts: { status: 'running' } }));
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            setTestState(prev => ({ ...prev, backend: { status: 'fail', error: errorMessage, fix: 'Run `node server.js` in the backend folder.' }, logMessage: errorMessage }));
+            return;
+        }
+        let audioBlobUrl = '';
+        try {
+            const ttsRes = await fetch('http://localhost:3001/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy' }) });
+            if (!ttsRes.ok) { const e = await ttsRes.json().catch(() => ({})); throw new Error(e.error || `HTTP ${ttsRes.status}`); }
+            const blob = await ttsRes.blob();
+            if (blob.size === 0) throw new Error('Empty audio buffer');
+            audioBlobUrl = URL.createObjectURL(blob);
+            setTestState(prev => ({ ...prev, tts: { status: 'pass', bytes: blob.size }, playback: { status: 'running' } }));
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            setTestState(prev => ({ ...prev, tts: { status: 'fail', error: errorMessage, fix: 'Check your OpenAI billing.' }, logMessage: `POST /api/tts failed: ${errorMessage}` }));
+            return;
+        }
+        try {
+            if (!audioTestRef.current) audioTestRef.current = new Audio();
+            audioTestRef.current.src = audioBlobUrl;
+            await audioTestRef.current.play();
+            setTestState(prev => ({ ...prev, playback: { status: 'pass' }, logMessage: 'All systems green!' }));
+        } catch (err: unknown) {
+            const errorName = err instanceof Error ? err.name : 'Error';
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            setTestState(prev => ({ ...prev, playback: { status: 'fail', error: errorName, fix: 'Click the page first to allow browser audio autoplay.' }, logMessage: `Playback blocked: ${errorName} - ${errorMessage}` }));
+        }
     };
 
     const StatusIcon = ({ status }: { status: TestStatus }) => {
@@ -275,169 +226,209 @@ export default function InputView({ onStart }: InputViewProps) {
         return <div className="empty-circle"></div>;
     };
 
+    const wordCount = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+    const hasText = text.trim().length > 0;
+    const ctaLabel = hasText ? (mode === 'read' ? 'Start Reading' : 'Play & Learn') : 'Paste text to begin';
+    const currentVoice = TTS_VOICES.find(v => v.id === selectedVoice)!;
+
     return (
-        <div className="view-container input-view fade-in flex flex-col justify-center">
+        <div className="iv-page">
 
-            <div className="input-box flex flex-col w-full h-full">
-                <div className="input-header">
-                    <div className="header-title-row">
-                        <BookOpen size={24} style={{ color: 'var(--primary)' }} />
-                        <h2>NeuralReader</h2>
-                    </div>
-                    <p>Your AI powered reading companion</p>
-                </div>
-                <div className="top-control-bar">
-                    <div className="mode-segmented-control-wrapper">
-                        <div className={`mode-segmented-control mode-${mode}`}>
-                            <div className="mode-slider"></div>
-                            <button
-                                className={`mode-segment ${mode === 'read' ? 'active' : ''}`}
-                                onClick={() => handleModeSelect('read')}
-                            >
-                                <span className="mode-text">Read</span>
-                            </button>
-                            <button
-                                className={`mode-segment ${mode === 'learn' ? 'active' : ''}`}
-                                onClick={() => handleModeSelect('learn')}
-                            >
-                                <span className="mode-text">Learn</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="theme-triple-pill" role="group" aria-label="Theme Selection">
-                        <button
-                            className={`theme-pill ${theme === 'light' ? 'active' : ''}`}
-                            onClick={() => { setTheme('light'); document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('theme', 'light'); }}
-                            aria-label="Light Mode"
-                            title="Light Mode"
-                        >
-                            <Sun size={14} /> Light
-                        </button>
-                        <button
-                            className={`theme-pill ${theme === 'dark' ? 'active' : ''}`}
-                            onClick={() => { setTheme('dark'); document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('theme', 'dark'); }}
-                            aria-label="Dark Mode"
-                            title="Dark Mode"
-                        >
-                            <Moon size={14} /> Dark
-                        </button>
-                        <button
-                            className={`theme-pill ${theme === 'sepia' ? 'active' : ''}`}
-                            onClick={() => { setTheme('sepia'); document.documentElement.setAttribute('data-theme', 'sepia'); localStorage.setItem('theme', 'sepia'); }}
-                            aria-label="Sepia Mode"
-                            title="Sepia Mode"
-                        >
-                            <Coffee size={14} /> Sepia
-                        </button>
-                    </div>
-                </div>
-                <div className="input-area-wrapper">
-                    {!text && !isExtracting && (
-                        <div className="empty-state-overlay">
-                            <FileDown size={32} opacity={0.4} strokeWidth={1.5} />
-                            <p>Paste text or drop file</p>
-                        </div>
-                    )}
-                    <textarea
-                        className="main-textarea"
-                        placeholder={isExtracting ? "Extracting text... Please wait." : ""}
-                        value={text}
-                        onChange={(e) => setText(e.target.value)}
-                        disabled={isExtracting}
+            {/* ── Fixed theme switcher top-right ── */}
+            <nav className="iv-theme-switcher" aria-label="Theme switcher">
+                {THEMES.map(t => (
+                    <button
+                        key={t.id}
+                        className={`iv-th-btn ${theme === t.id ? 'active' : ''}`}
+                        style={{ backgroundColor: t.dot }}
+                        data-tip={t.label}
+                        onClick={() => handleTheme(t.id)}
+                        aria-label={`${t.label} theme`}
+                        title={t.label}
                     />
-                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt,.pdf" style={{ display: 'none' }} />
-                </div>
+                ))}
+            </nav>
 
-                <div className="bottom-control-bar">
-                    <div className="voice-grid">
-                        {TTS_VOICES.map(v => (
-                            <button
-                                key={v.id}
-                                className={`voice-chip ${selectedVoice === v.id ? 'active' : ''}`}
-                                onClick={() => handleVoiceSelect(v.id)}
-                            >
-                                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="waveform-icon">
-                                    <path d="M4 12v.01" />
-                                    <path d="M8 8v8" />
-                                    <path d="M12 4v16" />
-                                    <path d="M16 9v6" />
-                                    <path d="M20 12v.01" />
-                                </svg>
-                                <span>{v.name}</span>
-                            </button>
-                        ))}
-                    </div>
-                    <div className="action-buttons-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <div className="language-selector" style={{ display: 'flex', backgroundColor: 'var(--surface-hover)', borderRadius: '20px', padding: '4px' }}>
-                                <button
-                                    className={`lang-btn ${readingLanguage === 'english' ? 'active' : ''}`}
-                                    onClick={() => setReadingLanguage('english')}
-                                    style={{ padding: '6px 12px', border: 'none', background: readingLanguage === 'english' ? 'var(--bg)' : 'transparent', borderRadius: '16px', fontSize: '0.85rem', fontWeight: readingLanguage === 'english' ? '500' : '400', color: readingLanguage === 'english' ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                                >
-                                    English
-                                </button>
-                                <button
-                                    className={`lang-btn ${readingLanguage === 'french' ? 'active' : ''}`}
-                                    onClick={() => setReadingLanguage('french')}
-                                    style={{ padding: '6px 12px', border: 'none', background: readingLanguage === 'french' ? 'var(--bg)' : 'transparent', borderRadius: '16px', fontSize: '0.85rem', fontWeight: readingLanguage === 'french' ? '500' : '400', color: readingLanguage === 'french' ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                                >
-                                    French
-                                </button>
-                            </div>
-                            <button className="play-btn primary-btn" onClick={handlePlay} disabled={!text.trim() || isExtracting}>
-                                <span>Start Reading</span>
-                            </button>
-                        </div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', opacity: 0.8 }}>Paste text already written in the selected language.</span>
-                    </div>
-                </div>
+            {/* ── Ambient glow background ── */}
+            <div className="iv-ambient" aria-hidden="true">
+                <div className="iv-glow iv-glow-1" />
+                <div className="iv-glow iv-glow-2" />
             </div>
 
+            <div className="iv-screen">
+
+                {/* ── Logo ── */}
+                <div className="iv-logo">
+                    <div className="iv-logo-mark">✦</div>
+                    <span className="iv-logo-name">Alphie</span>
+                    <span className="iv-logo-sub">Read deeply. Learn fully.</span>
+                </div>
+
+                {/* ── Textarea ── */}
+                <div className="iv-input-wrap">
+                    <div className="iv-input-border" aria-hidden="true" />
+                    <div className="iv-input-inner">
+                        <textarea
+                            className="iv-textarea"
+                            placeholder={isExtracting ? 'Extracting text…' : 'Paste anything you want to understand…'}
+                            value={text}
+                            onChange={(e) => setText(e.target.value)}
+                            disabled={isExtracting}
+                            aria-label="Paste your text here"
+                        />
+                        <div className="iv-input-footer">
+                            <button
+                                className="iv-upload-pill"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isExtracting}
+                                aria-label="Upload PDF or TXT"
+                            >
+                                {isExtracting
+                                    ? <Loader2 size={13} className="spin-icon" />
+                                    : <Paperclip size={13} />}
+                                <span>Upload file</span>
+                            </button>
+                            <span className={`iv-word-count ${wordCount > 0 ? 'show' : ''}`}>
+                                {wordCount} {wordCount === 1 ? 'word' : 'words'}
+                            </span>
+                        </div>
+                    </div>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        accept=".txt,.pdf"
+                        aria-label="Upload file"
+                        style={{ display: 'none' }}
+                    />
+                </div>
+
+                {/* ── Controls row: Mode | Voice | Lang ── */}
+                <div className="iv-controls">
+
+                    {/* Mode */}
+                    <div className="iv-mode-toggle" role="group" aria-label="Reading mode">
+                        <button
+                            className={`iv-mode-btn ${mode === 'read' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('read')}
+                        >Read</button>
+                        <button
+                            className={`iv-mode-btn ${mode === 'learn' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('learn')}
+                        >Learn</button>
+                    </div>
+
+                    {/* Voice dropdown pill */}
+                    <div
+                        className={`iv-voice-pill ${voiceOpen ? 'open' : ''}`}
+                        ref={voiceDropRef}
+                        onClick={() => setVoiceOpen(o => !o)}
+                        role="button"
+                        aria-haspopup="listbox"
+                        aria-expanded={voiceOpen ? 'true' : 'false'}
+                        aria-label={`Voice: ${currentVoice.name}`}
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && setVoiceOpen(o => !o)}
+                    >
+                        <div className="iv-wave-mini" aria-hidden="true">
+                            <div className="iv-wbar" /><div className="iv-wbar" /><div className="iv-wbar" /><div className="iv-wbar" />
+                        </div>
+                        <span className="iv-voice-label">{currentVoice.name}</span>
+                        <span className="iv-chevron" aria-hidden="true">▾</span>
+
+                        {/* Floating dropdown */}
+                        <div className={`iv-voice-dropdown ${voiceOpen ? 'open' : ''}`} role="listbox">
+                            {TTS_VOICES.map(v => (
+                                <button
+                                    key={v.id}
+                                    className={`iv-vopt ${selectedVoice === v.id ? 'sel' : ''}`}
+                                    role="option"
+                                    aria-selected={selectedVoice === v.id ? 'true' : 'false'}
+                                    onClick={(e) => { e.stopPropagation(); handleVoiceSelect(v.id); }}
+                                >
+                                    <div className="iv-vopt-wave" aria-hidden="true">
+                                        <div className="iv-vbar" /><div className="iv-vbar" /><div className="iv-vbar" /><div className="iv-vbar" />
+                                    </div>
+                                    <div className="iv-vopt-info">
+                                        <div className="iv-vopt-name">{v.name}</div>
+                                        <div className="iv-vopt-desc">{v.desc}</div>
+                                    </div>
+                                    <div className="iv-vopt-check" aria-hidden="true">✓</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Language */}
+                    <div className="iv-lang-toggle">
+                        <div
+                            className="iv-lang-track"
+                            style={{
+                                left: sliderStyle.left,
+                                width: sliderStyle.width,
+                            } as React.CSSProperties}
+                            aria-hidden="true"
+                        />
+                        <button
+                            ref={langEnRef}
+                            className={`iv-lang-btn ${readingLanguage === 'english' ? 'active' : ''}`}
+                            onClick={() => setReadingLanguage('english')}
+                        >EN</button>
+                        <button
+                            ref={langFrRef}
+                            className={`iv-lang-btn ${readingLanguage === 'french' ? 'active' : ''}`}
+                            onClick={() => setReadingLanguage('french')}
+                        >FR</button>
+                    </div>
+
+                </div>
+
+                {/* ── CTA ── */}
+                <div className="iv-cta-wrap">
+                    <button
+                        className={`iv-cta-btn ${hasText ? 'ready' : 'waiting'}`}
+                        onClick={hasText ? handlePlay : undefined}
+                        disabled={isExtracting}
+                        aria-label={ctaLabel}
+                    >
+                        <span className="iv-cta-icon">{hasText ? '▶' : '✦'}</span>
+                        <span>{ctaLabel}</span>
+                    </button>
+                </div>
+
+                {/* ── Hint ── */}
+                <p className={`iv-hint ${mode === 'learn' ? 'show' : ''}`}>
+                    Learn mode runs a quiz and Feynman Test after reading
+                </p>
+
+            </div>
+
+            {/* ── Theme label ── */}
+            <div className="iv-theme-label" aria-hidden="true">
+                {THEMES.find(t => t.id === theme)?.label ?? 'Night'}
+            </div>
+
+            {/* ── Diagnostics (hidden) ── */}
             {showTests && (
                 <div className="diagnostics-panel">
                     <h3>Diagnostic Pipeline</h3>
                     <ul className="test-list">
-                        <li>
-                            <div className="test-row">
-                                <StatusIcon status={testState.backend.status} />
-                                <strong>Backend Connectivity:</strong>
-                                <span>{testState.backend.status.toUpperCase()}</span>
-                            </div>
-                            {testState.backend.fix && <div className="fix-hint">Fix: {testState.backend.fix}</div>}
-                        </li>
-                        <li>
-                            <div className="test-row">
-                                <StatusIcon status={testState.openai.status} />
-                                <strong>OpenAI Key Loaded:</strong>
-                                <span>{testState.openai.status.toUpperCase()}</span>
-                            </div>
-                            {testState.openai.fix && <div className="fix-hint">Fix: {testState.openai.fix}</div>}
-                        </li>
-                        <li>
-                            <div className="test-row">
-                                <StatusIcon status={testState.tts.status} />
-                                <strong>TTS API Voice Check:</strong>
-                                <span>{testState.tts.status === 'pass' ? `PASS (${testState.tts.bytes} bytes)` : testState.tts.status.toUpperCase()}</span>
-                            </div>
-                            {testState.tts.fix && <div className="fix-hint">Fix: {testState.tts.fix}</div>}
-                        </li>
-                        <li>
-                            <div className="test-row">
-                                <StatusIcon status={testState.playback.status} />
-                                <strong>Browser Audio Playback:</strong>
-                                <span>{testState.playback.status === 'fail' ? `FAIL (${testState.playback.error})` : testState.playback.status.toUpperCase()}</span>
-                            </div>
-                            {testState.playback.fix && <div className="fix-hint">Fix: {testState.playback.fix}</div>}
-                        </li>
+                        {[
+                            { label: 'Backend Connectivity', key: 'backend' as const },
+                            { label: 'OpenAI Key Loaded', key: 'openai' as const },
+                            { label: 'TTS API Voice Check', key: 'tts' as const },
+                            { label: 'Audio Playback', key: 'playback' as const },
+                        ].map(({ label, key }) => (
+                            <li key={key} className="test-row">
+                                <StatusIcon status={testState[key].status} />
+                                <span>{label}</span>
+                                {testState[key].status === 'fail' && testState[key].error && (
+                                    <span className="test-error">— {testState[key].error}</span>
+                                )}
+                            </li>
+                        ))}
                     </ul>
-
-                    {testState.logMessage && (
-                        <div className="log-panel">
-                            <strong>Latest Log:</strong> {testState.logMessage}
-                        </div>
-                    )}
+                    {testState.logMessage && <p className="test-log">{testState.logMessage}</p>}
                 </div>
             )}
         </div>

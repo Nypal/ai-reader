@@ -1,8 +1,9 @@
-/* Append to App.css to handle mobile responsiveness */
+/* App layout */
 .app-layout {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background-color: var(--page-bg);
 }
 
 .main-content {
