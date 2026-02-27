@@ -1,10 +1,65 @@
+// Patterns that are almost always web-page chrome, not readable content.
+const JUNK_LINE_PATTERNS: RegExp[] = [
+    // UI actions
+    /^(share|tweet|like|follow|subscribe|sign\s*in|sign\s*up|log\s*in|log\s*out|register|join now)$/i,
+    /^(click here|read more|load more|see more|show more|view more|learn more|find out more)$/i,
+    /^(back to top|skip to content|jump to|go to|scroll to)$/i,
+    // Navigation / layout labels
+    /^(menu|home|search|contact|about|privacy|terms|cookies?|newsletter|sitemap)$/i,
+    /^(advertisement|sponsored content?|ad\b|promo)/i,
+    // Legal boilerplate
+    /^copyright\s/i,
+    /^all rights reserved/i,
+    /^©/,
+    // Reading-time / date stamps ("5 min read", "March 15, 2024", "2 days ago")
+    /^\d+\s*(min(ute)?|hour|day|week|month|year)s?\s*(read|ago|left)?\.?$/i,
+    /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d/i,
+    /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/,
+    // Bare URLs
+    /^https?:\/\//i,
+    // Social share counts ("1.2K shares", "47 comments")
+    /^\d[\d.,]*[KkMm]?\s*(shares?|likes?|comments?|views?|followers?)$/i,
+];
+
+function cleanWebText(raw: string): string {
+    // Only apply line-by-line filtering when the text actually has newlines
+    // (pasted web content). Single-block text is left untouched.
+    if (!raw.includes('\n')) return raw;
+
+    const lines = raw.split('\n');
+    const kept: string[] = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Keep blank lines so paragraph structure is preserved
+        if (!trimmed) { kept.push(''); continue; }
+
+        // Drop known junk patterns
+        if (JUNK_LINE_PATTERNS.some(p => p.test(trimmed))) continue;
+
+        // Drop very short lines (≤3 words) with no sentence-ending punctuation —
+        // these are almost always nav labels, headings-without-context, or bylines.
+        const words = trimmed.split(/\s+/);
+        const hasSentencePunct = /[.!?:;]$/.test(trimmed);
+        if (words.length <= 3 && !hasSentencePunct) continue;
+
+        kept.push(trimmed);
+    }
+
+    // Collapse runs of 3+ blank lines to a single blank line
+    return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function useSentenceSplitter(text: string): { original: string[]; spoken: string[] } {
     if (!text) return { original: [], spoken: [] };
+
+    const cleaned = cleanWebText(text);
 
     const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig;
     const emails: { key: string; original: string; spoken: string }[] = [];
 
-    let processedText = text.replace(emailRegex, (match) => {
+    let processedText = cleaned.replace(emailRegex, (match) => {
         const key = `__EMAIL_${emails.length}__`;
 
         // Spoken version: test at example dot com
