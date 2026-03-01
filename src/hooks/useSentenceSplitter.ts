@@ -84,6 +84,14 @@ export function useSentenceSplitter(text: string): { original: string[]; spoken:
     };
 
     processedText = processedText
+        // Decimal numbers: 3.14, 0.5, $3.50, 1,234.56
+        .replace(/\d+\.\d+/g, protect)
+        // Ellipsis (unicode and ASCII): … or ... or ....
+        .replace(/…/g, protect)
+        .replace(/\.{2,}/g, protect)
+        // Punctuation inside closing quotes is not a sentence boundary
+        // e.g. "Go away!" she said. → protect the ! before "
+        .replace(/([!?])(?=['"\u2019\u201D])/g, protect)
         // 2+ uppercase letters with dots: U.S., U.K., E.U., U.S.A.
         .replace(/\b(?:[A-Z]\.){2,}/g, protect)
         // Title abbreviations: Dr., Mr., Mrs., Ms., Prof., Sr., Jr.

@@ -44,6 +44,19 @@ function blobUrlFrom(buf: ArrayBuffer, contentType: string) {
     return { blob, url: URL.createObjectURL(blob), byteLength: buf.byteLength, contentType };
 }
 
+// Estimates syllable count for a word — a better proxy for spoken duration than char count.
+// e.g. "the" → 1, "beautiful" → 3, "strength" → 1
+function estimateSyllables(word: string): number {
+    const w = word.toLowerCase().replace(/[^a-z]/g, '');
+    if (w.length === 0) return 1;
+    if (w.length <= 3) return 1;
+    const groups = w.match(/[aeiouy]+/g);
+    let count = groups ? groups.length : 1;
+    // Silent trailing 'e': "cake" → 1 syllable, not 2
+    if (w.endsWith('e') && count > 1) count--;
+    return Math.max(1, count);
+}
+
 export default function ReaderView({ content, readingLanguage, onFinish, onBack }: ReaderViewProps) {
     const effectiveContent = content?.trim() || "Hello, this is a playback test.";
     const { original: sentences, spoken: sentencesSpoken } = useSentenceSplitter(effectiveContent);
@@ -206,40 +219,59 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     }, []);
 
     const fetchTts = useCallback(async (text: string, signal: AbortSignal): Promise<{ buf: ArrayBuffer; contentType: string }> => {
-        const fetchStartMs = nowMs();
-        console.log(`[PlayLearn] fetching TTS for chunk: "${text}"`);
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ text, voice: voiceRef.current, lang: readingLanguage === 'french' ? 'fr' : 'en' }),
-            signal,
-        });
+        const MAX_RETRIES = 3;
+        let lastErr: Error = new Error("unknown");
 
-        const ct = res.headers.get("content-type");
-        console.log(`[PlayLearn] status`, res.status, ct);
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`TTS HTTP ${res.status} (${ct ?? "no-ct"}): ${errText}`);
-        }
-
-        const buf = await res.arrayBuffer();
-        console.log("[PlayLearn] bytes received:", buf.byteLength);
-
-        if (buf.byteLength < 1000) {
-            throw new Error(`TTS returned too few bytes: ${buf.byteLength}`);
-        }
-
-        const latency = nowMs() - fetchStartMs;
-        setTtsLatencyAvg(prev => {
-            const newAvg = prev === 0 ? latency : (prev * 0.7 + latency * 0.3);
-            if (newAvg > 3000 && !isSlowBackend) {
-                setIsSlowBackend(true);
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            if (attempt > 0) {
+                const delayMs = 500 * 2 ** (attempt - 1); // 500ms, then 1000ms
+                await new Promise<void>((res) => setTimeout(res, delayMs));
+                if (signal.aborted) throw new DOMException("Aborted", "AbortError");
             }
-            return newAvg;
-        });
 
-        return { buf: buf, contentType: assertAudioContentType(ct) };
+            try {
+                const fetchStartMs = nowMs();
+                console.log(`[PlayLearn] fetching TTS (attempt ${attempt + 1}): "${text}"`);
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ text, voice: voiceRef.current, lang: readingLanguage === 'french' ? 'fr' : 'en' }),
+                    signal,
+                });
+
+                const ct = res.headers.get("content-type");
+                console.log(`[PlayLearn] status`, res.status, ct);
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`TTS HTTP ${res.status} (${ct ?? "no-ct"}): ${errText}`);
+                }
+
+                const buf = await res.arrayBuffer();
+                console.log("[PlayLearn] bytes received:", buf.byteLength);
+
+                if (buf.byteLength < 1000) {
+                    throw new Error(`TTS returned too few bytes: ${buf.byteLength}`);
+                }
+
+                const latency = nowMs() - fetchStartMs;
+                setTtsLatencyAvg(prev => {
+                    const newAvg = prev === 0 ? latency : (prev * 0.7 + latency * 0.3);
+                    if (newAvg > 3000 && !isSlowBackend) {
+                        setIsSlowBackend(true);
+                    }
+                    return newAvg;
+                });
+
+                return { buf, contentType: assertAudioContentType(ct) };
+            } catch (err: unknown) {
+                if (err instanceof Error && err.name === "AbortError") throw err;
+                lastErr = err instanceof Error ? err : new Error(String(err));
+                console.warn(`[PlayLearn] TTS attempt ${attempt + 1} failed: ${lastErr.message}`);
+            }
+        }
+
+        throw lastErr;
     }, [isSlowBackend, readingLanguage]);
 
     const prefetchSingle = useCallback(
@@ -421,7 +453,6 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             const errorMsg = `play() rejected: ${errName} ${errMsg}`;
             console.error(errorMsg);
             setLastError(errorMsg);
-            alert(`Audio blocked or failed: ${errorMsg}`);
         } finally {
             inFlightPlayRef.current = null;
         }
@@ -493,7 +524,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         // Immediately stop current audio so old sentence doesn't keep playing
         try { audioRef.current?.pause(); } catch { /* ignore */ }
         replayCountRef.current += 1;
-        const wasPlaying = playbackState === 'playing' || playbackState === 'loading';
+        const wasPlaying = playbackState === 'playing' || playbackState === 'loading' || playbackState === 'paused';
         runIdRef.current += 1;
         isStoppedRef.current = false;
         abortRef.current?.abort();
@@ -610,13 +641,13 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
                         const isHighlighted = idx === currentSentenceIdx;
                         const words = sentence.split(/(\s+)/);
                         const wordTokens = words.filter(w => w.trim().length > 0);
-                        const totalChars = wordTokens.reduce((sum, w) => sum + w.length, 0) || 1;
+                        const totalSyllables = wordTokens.reduce((sum, w) => sum + estimateSyllables(w), 0) || 1;
 
-                        // Build cumulative char-proportion thresholds — longer words get more time
-                        let cumChars = 0;
+                        // Build cumulative syllable-proportion thresholds — words with more syllables get more time
+                        let cumSyllables = 0;
                         const wordThresholds = wordTokens.map(w => {
-                            cumChars += w.length;
-                            return cumChars / totalChars;
+                            cumSyllables += estimateSyllables(w);
+                            return cumSyllables / totalSyllables;
                         });
 
                         let activeWordIdx = -1;
