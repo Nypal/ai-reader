@@ -51,7 +51,7 @@ function cleanWebText(raw: string): string {
     return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-export function useSentenceSplitter(text: string): { original: string[]; spoken: string[] } {
+export function splitSentences(text: string): { original: string[]; spoken: string[] } {
     if (!text) return { original: [], spoken: [] };
 
     const cleaned = cleanWebText(text);
@@ -126,8 +126,57 @@ export function useSentenceSplitter(text: string): { original: string[]; spoken:
         return out;
     };
 
+    // ── Cap TTS chunk size ────────────────────────────────────────────────────
+    // OpenAI TTS latency scales with text length. Sentences > ~180 chars can
+    // take 3-6 s even on fast connections. We split long sentences at natural
+    // phrase boundaries (semicolon › comma+conjunction › em-dash › word) so
+    // every chunk stays under MAX_CHUNK_CHARS and arrives in < ~1 s.
+    const MAX_CHUNK_CHARS = 180;
+
+    function splitLongChunk(s: string): string[] {
+        if (s.length <= MAX_CHUNK_CHARS) return [s];
+
+        // Try to split at: semicolons, comma+conjunction, em-dash, colon
+        const naturalSplits = [
+            /;\s*/,
+            /,\s+(?=and |but |so |or |yet |nor |because |although |however |while |when |if )/i,
+            /[–—]\s*/,
+            /:\s+/,
+        ];
+
+        for (const splitter of naturalSplits) {
+            const parts = s.split(splitter).map(p => p.trim()).filter(p => p.length > 0);
+            if (parts.length > 1 && parts.every(p => p.length <= MAX_CHUNK_CHARS)) {
+                return parts;
+            }
+            // If split helps but some parts are still long, recursively split
+            if (parts.length > 1 && parts.some(p => p.length > MAX_CHUNK_CHARS)) {
+                return parts.flatMap(p => splitLongChunk(p));
+            }
+        }
+
+        // Last resort: hard split at word boundary nearest to MAX_CHUNK_CHARS
+        const chunks: string[] = [];
+        let remaining = s;
+        while (remaining.length > MAX_CHUNK_CHARS) {
+            let cutAt = remaining.lastIndexOf(' ', MAX_CHUNK_CHARS);
+            if (cutAt <= 0) cutAt = MAX_CHUNK_CHARS;
+            chunks.push(remaining.slice(0, cutAt).trim());
+            remaining = remaining.slice(cutAt).trim();
+        }
+        if (remaining) chunks.push(remaining);
+        return chunks;
+    }
+
+    const expandedOriginal = trimmedProtected.flatMap(s => splitLongChunk(restore(s, "original")));
+    const expandedSpoken = trimmedProtected.flatMap(s => splitLongChunk(restore(s, "spoken")));
+
     return {
-        original: trimmedProtected.map(s => restore(s, "original")),
-        spoken: trimmedProtected.map(s => restore(s, "spoken"))
+        original: expandedOriginal,
+        spoken: expandedSpoken,
     };
+}
+
+export function useSentenceSplitter(text: string) {
+    return splitSentences(text);
 }

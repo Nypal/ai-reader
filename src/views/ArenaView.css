@@ -18,7 +18,7 @@
     inset: 0;
     background:
         radial-gradient(ellipse 60% 30% at 50% 0%, rgba(123, 110, 246, 0.09), transparent 60%),
-        radial-gradient(ellipse 30% 20% at 90% 70%, rgba(255, 214, 10, 0.04), transparent 55%);
+        radial-gradient(ellipse 30% 20% at 90% 70%, var(--warning-bg), transparent 55%);
     pointer-events: none;
     z-index: 0;
 }
@@ -57,11 +57,11 @@
     gap: 6px;
     padding: 6px 14px;
     border-radius: 100px;
-    background: rgba(255, 149, 0, 0.10);
-    border: 1px solid rgba(255, 149, 0, 0.25);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-bg);
     font-size: 13px;
     font-weight: 700;
-    color: #FF9500;
+    color: var(--warning);
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
@@ -70,7 +70,7 @@
 }
 
 .arena-streak-pill:hover {
-    background: rgba(255, 149, 0, 0.18);
+    background: var(--warning-bg);
 }
 
 .streak-fire {
@@ -116,7 +116,7 @@
 .arena-xp-bar-fill {
     height: 100%;
     border-radius: 6px;
-    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+    background: linear-gradient(90deg, #7B6EF6, var(--accent2));
     transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
 }
@@ -171,7 +171,7 @@
 .arena-total-xp {
     font-size: 13px;
     font-weight: 700;
-    color: #FFD60A;
+    color: var(--warning);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -233,7 +233,7 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+    background: linear-gradient(90deg, #7B6EF6, var(--accent2));
 }
 
 .arena-quest-header {
@@ -254,9 +254,9 @@
     gap: 4px;
     font-size: 13px;
     font-weight: 700;
-    color: #FFD60A;
-    background: rgba(255, 214, 10, 0.12);
-    border: 1px solid rgba(255, 214, 10, 0.2);
+    color: var(--warning);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-bg);
     padding: 4px 10px;
     border-radius: 100px;
 }
@@ -296,8 +296,8 @@
 }
 
 .arena-qt-check.done {
-    background: #34C759;
-    border-color: #34C759;
+    background: var(--success);
+    border-color: var(--success);
     color: white;
 }
 
@@ -323,7 +323,7 @@
 .arena-qp-fill {
     height: 100%;
     border-radius: 5px;
-    background: linear-gradient(90deg, #7B6EF6, #9B8BFF);
+    background: linear-gradient(90deg, #7B6EF6, var(--accent2));
     transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -394,8 +394,8 @@
     gap: 4px;
     font-size: 11px;
     font-weight: 700;
-    color: #FFD60A;
-    background: rgba(255, 214, 10, 0.12);
+    color: var(--warning);
+    background: var(--warning-bg);
     padding: 3px 8px;
     border-radius: 100px;
 }
@@ -423,7 +423,7 @@
 
 .arena-badge-item:hover {
     transform: translateY(-2px);
-    border-color: rgba(255, 214, 10, 0.3);
+    border-color: var(--warning-bg);
 }
 
 .arena-badge-item.locked {
@@ -448,8 +448,8 @@
 }
 
 .arena-badge-icon.gold {
-    background: linear-gradient(135deg, rgba(255, 214, 10, 0.2), rgba(255, 214, 10, 0.05));
-    border: 1px solid rgba(255, 214, 10, 0.3);
+    background: linear-gradient(135deg, var(--warning-bg), var(--warning-bg));
+    border: 1px solid var(--warning-bg);
 }
 
 .arena-badge-icon.violet {
@@ -458,13 +458,13 @@
 }
 
 .arena-badge-icon.green {
-    background: linear-gradient(135deg, rgba(52, 199, 89, 0.15), transparent);
-    border: 1px solid rgba(52, 199, 89, 0.3);
+    background: linear-gradient(135deg, var(--success-bg), transparent);
+    border: 1px solid var(--success-bg);
 }
 
 .arena-badge-icon.cyan {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), transparent);
-    border: 1px solid rgba(6, 182, 212, 0.3);
+    background: linear-gradient(135deg, var(--info-bg), transparent);
+    border: 1px solid var(--info-bg);
 }
 
 .arena-badge-name {
@@ -512,7 +512,7 @@
 }
 
 .arena-lb-rank.top1 {
-    color: #FFD60A;
+    color: var(--warning);
 }
 
 .arena-lb-rank.top2 {
@@ -565,7 +565,7 @@
 .arena-lb-xp {
     font-size: 13px;
     font-weight: 700;
-    color: #FFD60A;
+    color: var(--warning);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -609,10 +609,10 @@
     align-items: center;
     gap: 10px;
     background: rgba(7, 7, 16, 0.95);
-    border: 1px solid rgba(255, 214, 10, 0.35);
+    border: 1px solid var(--warning-bg);
     border-radius: 14px;
     padding: 12px 18px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 214, 10, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--warning-bg);
     -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
     transform: translateX(120%);
@@ -636,7 +636,7 @@
 .toast-title {
     font-size: 13px;
     font-weight: 700;
-    color: #FFD60A;
+    color: var(--warning);
     margin-bottom: 2px;
 }
 
@@ -653,11 +653,11 @@
     z-index: 200;
     padding: 10px 18px;
     border-radius: 100px;
-    background: linear-gradient(135deg, #FF9500, #FF6B00);
+    background: linear-gradient(135deg, var(--warning), #FF6B00);
     color: white;
     font-size: 14px;
     font-weight: 800;
-    box-shadow: 0 4px 20px rgba(255, 149, 0, 0.5);
+    box-shadow: 0 4px 20px var(--warning-bg);
     transform: translateY(-80px) scale(0.7);
     transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     letter-spacing: 0.02em;
@@ -690,9 +690,9 @@
     font-family: 'Playfair Display', 'Georgia', serif;
     font-size: 22px;
     font-weight: 900;
-    color: #FFD60A;
+    color: var(--warning);
     pointer-events: none;
-    text-shadow: 0 0 20px rgba(255, 214, 10, 0.4);
+    text-shadow: 0 0 20px var(--warning-bg);
     animation: arena-floatUp 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     white-space: nowrap;
 }
@@ -769,7 +769,7 @@
     font-family: 'Playfair Display', 'Georgia', serif;
     font-size: 42px;
     font-weight: 900;
-    background: linear-gradient(135deg, #FFD60A, #FFB800);
+    background: linear-gradient(135deg, var(--warning), #FFB800);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -797,15 +797,15 @@
     font-size: 15px;
     font-weight: 800;
     cursor: pointer;
-    background: linear-gradient(135deg, #FFD60A, #FFB800);
+    background: linear-gradient(135deg, var(--warning), #FFB800);
     color: #1A1200;
-    box-shadow: 0 4px 20px rgba(255, 214, 10, 0.4);
+    box-shadow: 0 4px 20px var(--warning-bg);
     transition: all 0.22s;
 }
 
 .arena-levelup-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 28px rgba(255, 214, 10, 0.5);
+    box-shadow: 0 8px 28px var(--warning-bg);
 }
 
 /* ── Confetti Particles ─────────────────────────────────────── */

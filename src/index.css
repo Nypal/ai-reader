@@ -45,6 +45,16 @@
   --dropdown-bg: rgba(14, 14, 22, 0.96);
   --focus-ring: rgba(123, 110, 246, 0.5);
 
+  /* Semantic Colors - Night */
+  --success: #34C759;
+  --success-bg: rgba(52, 199, 89, 0.15);
+  --error: #FF453A;
+  --error-bg: rgba(255, 69, 58, 0.15);
+  --warning: #FF9500;
+  --warning-bg: rgba(255, 149, 0, 0.15);
+  --info: #0A84FF;
+  --info-bg: rgba(10, 132, 255, 0.15);
+
   /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
@@ -121,6 +131,16 @@
   --input-focus-bg: rgba(255, 255, 255, 0.95);
   --dropdown-bg: rgba(248, 248, 252, 0.98);
   --focus-ring: rgba(91, 75, 213, 0.4);
+
+  /* Semantic Colors - Light */
+  --success: #16A34A;
+  --success-bg: rgba(22, 163, 74, 0.1);
+  --error: #DC2626;
+  --error-bg: rgba(220, 38, 38, 0.1);
+  --warning: #D97706;
+  --warning-bg: rgba(217, 119, 6, 0.1);
+  --info: #2563EB;
+  --info-bg: rgba(37, 99, 235, 0.1);
   --shadow-card: 0 8px 40px rgba(0, 0, 0, 0.10);
   --shadow-pill: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.05);
   --shadow-2: 0 4px 20px rgba(0, 0, 0, 0.08);
@@ -163,6 +183,20 @@
   --input-focus-bg: rgba(255, 250, 240, 0.90);
   --dropdown-bg: rgba(244, 238, 226, 0.98);
   --focus-ring: rgba(184, 115, 51, 0.45);
+
+  /* Semantic Colors - Sepia */
+  --success: #2E8B57;
+  /* Sea Green */
+  --success-bg: rgba(46, 139, 87, 0.12);
+  --error: #B22222;
+  /* Firebrick */
+  --error-bg: rgba(178, 34, 34, 0.12);
+  --warning: #B87333;
+  /* Copper */
+  --warning-bg: rgba(184, 115, 51, 0.12);
+  --info: #4682B4;
+  /* Steel Blue */
+  --info-bg: rgba(70, 130, 180, 0.12);
   --shadow-card: 0 8px 40px rgba(0, 0, 0, 0.10);
   --shadow-pill: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.05);
   --shadow-2: 0 4px 20px rgba(0, 0, 0, 0.08);
@@ -205,6 +239,16 @@
   --input-focus-bg: rgba(255, 255, 255, 0.06);
   --dropdown-bg: rgba(10, 20, 14, 0.97);
   --focus-ring: rgba(52, 199, 89, 0.45);
+
+  /* Semantic Colors - Forest */
+  --success: #34C759;
+  --success-bg: rgba(52, 199, 89, 0.15);
+  --error: #FF453A;
+  --error-bg: rgba(255, 69, 58, 0.15);
+  --warning: #FF9500;
+  --warning-bg: rgba(255, 149, 0, 0.15);
+  --info: #0A84FF;
+  --info-bg: rgba(10, 132, 255, 0.15);
   --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.5);
   --shadow-pill: 0 8px 40px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-2: 0 8px 32px rgba(0, 0, 0, 0.4);

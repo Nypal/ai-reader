@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Loader2, Paperclip } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
+import { splitSentences } from '../hooks/useSentenceSplitter';
 import './InputView.css';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -9,6 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
     onArena?: () => void;
+    onPrewarm?: (sentence0: string, voice: string, lang: string) => void;
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -56,7 +58,9 @@ const initialTestState: SystemTestState = {
     logMessage: null,
 };
 
-export default function InputView({ onStart, onArena }: InputViewProps) {
+// Removed local extractFirstSentence — we now use useSentenceSplitter directly
+
+export default function InputView({ onStart, onArena, onPrewarm }: InputViewProps) {
     const [text, setText] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
@@ -113,6 +117,29 @@ export default function InputView({ onStart, onArena }: InputViewProps) {
         return () => document.removeEventListener('mousedown', handleOutsideClick);
     }, [handleOutsideClick]);
 
+    // --- Pre-warm TTS: fire 1500ms after user stops typing / changes voice / lang ---
+    const prewarmLang = readingLanguage === 'french' ? 'fr' : 'en';
+    // Stable ref so the timeout callback always reads fresh values
+    const prewarmRef = useRef({ voice: selectedVoice, lang: prewarmLang, text });
+    prewarmRef.current = { voice: selectedVoice, lang: prewarmLang, text };
+    // Dedup: track the last key we actually fired so we don't repeat for same sentence
+    const lastPrewarmKeyRef = useRef('');
+
+    const { spoken } = splitSentences(text);
+    const sentence0 = useMemo(() => spoken[0] || '', [spoken]);
+
+    useEffect(() => {
+        if (!onPrewarm || !sentence0) return;
+        const timer = setTimeout(() => {
+            const { voice, lang } = prewarmRef.current;
+            const key = `${sentence0}|${voice}|${lang}`;
+            if (key === lastPrewarmKeyRef.current) return; // already sent
+            lastPrewarmKeyRef.current = key;
+            onPrewarm(sentence0, voice, lang);
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [sentence0, selectedVoice, prewarmLang, onPrewarm]);
+
     const handleModeSelect = (newMode: 'read' | 'learn') => {
         setMode(newMode);
         localStorage.setItem('playlearn_mode', newMode);
@@ -136,6 +163,36 @@ export default function InputView({ onStart, onArena }: InputViewProps) {
         btn.appendChild(ripple);
         setTimeout(() => ripple.remove(), 600);
         onStart(text, mode, readingLanguage);
+    };
+
+    // Fire prewarm immediately on mousedown — ~150ms before click event fires.
+    // This gives the TTS request a head start even if user clicks before the debounce.
+    const handlePlayMouseDown = () => {
+        if (!onPrewarm || !text.trim()) return;
+        const { spoken } = splitSentences(text);
+        const s0 = spoken[0];
+        if (!s0) return;
+        const lang = readingLanguage === 'french' ? 'fr' : 'en';
+        const key = `${s0}|${selectedVoice}|${lang}`;
+        if (key !== lastPrewarmKeyRef.current) {
+            lastPrewarmKeyRef.current = key;
+            onPrewarm(s0, selectedVoice, lang);
+        }
+    };
+
+    // Fire prewarm instantly on paste — text is fully formed, no debounce needed.
+    const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        const pasted = e.clipboardData.getData('text');
+        if (!onPrewarm || !pasted.trim()) return;
+        const { spoken } = splitSentences(pasted);
+        const s0 = spoken[0];
+        if (!s0) return;
+        const lang = readingLanguage === 'french' ? 'fr' : 'en';
+        const key = `${s0}|${selectedVoice}|${lang}`;
+        if (key !== lastPrewarmKeyRef.current) {
+            lastPrewarmKeyRef.current = key;
+            onPrewarm(s0, selectedVoice, lang);
+        }
     };
 
     const extractTextFromPdf = async (file: File) => {
@@ -274,6 +331,7 @@ export default function InputView({ onStart, onArena }: InputViewProps) {
                             placeholder={isExtracting ? 'Extracting text…' : 'Paste anything you want to understand…'}
                             value={text}
                             onChange={(e) => setText(e.target.value)}
+                            onPaste={handlePaste}
                             disabled={isExtracting}
                             aria-label="Paste your text here"
                         />
@@ -389,6 +447,7 @@ export default function InputView({ onStart, onArena }: InputViewProps) {
                     <button
                         className={`iv-cta-btn ${hasText ? 'ready' : 'waiting'}`}
                         onClick={hasText ? handlePlay : undefined}
+                        onMouseDown={hasText ? handlePlayMouseDown : undefined}
                         disabled={isExtracting}
                         aria-label={ctaLabel}
                     >

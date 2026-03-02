@@ -127,13 +127,13 @@
 }
 
 .phase-step.done .phase-dot {
-    background: #34C759;
-    border-color: #34C759;
+    background: var(--success);
+    border-color: var(--success);
     color: white;
 }
 
 .phase-step.done .phase-label {
-    color: #34C759;
+    color: var(--success);
 }
 
 .phase-step.active .phase-dot {
@@ -205,11 +205,11 @@
 }
 
 .qdot.done-q {
-    background: #34C759;
+    background: var(--success);
 }
 
 .qdot.wrong-q {
-    background: #FF453A;
+    background: var(--error);
 }
 
 .qdot.active-q {
@@ -244,15 +244,15 @@
 }
 
 .q-badge.detail {
-    background: rgba(6, 182, 212, 0.08);
-    color: #06B6D4;
-    border: 1px solid rgba(6, 182, 212, 0.20);
+    background: var(--info-bg);
+    color: var(--info);
+    border: 1px solid var(--info-bg);
 }
 
 .q-badge.apply {
-    background: rgba(255, 149, 0, 0.08);
-    color: #FF9500;
-    border: 1px solid rgba(255, 149, 0, 0.20);
+    background: var(--warning-bg);
+    color: var(--warning);
+    border: 1px solid var(--warning-bg);
 }
 
 /* ── Q Text ── */
@@ -320,13 +320,13 @@
 
 /* Reveal states */
 .mcq-opt.selected-correct {
-    border-color: rgba(52, 199, 89, 0.28);
-    background: rgba(52, 199, 89, 0.10);
+    border-color: var(--success-bg);
+    background: var(--success-bg);
     cursor: default;
 }
 
 .mcq-opt.selected-correct .opt-letter {
-    background: #34C759;
+    background: var(--success);
     color: white;
 }
 
@@ -335,24 +335,24 @@
 }
 
 .mcq-opt.selected-wrong {
-    border-color: rgba(255, 69, 58, 0.28);
-    background: rgba(255, 69, 58, 0.10);
+    border-color: var(--error-bg);
+    background: var(--error-bg);
     cursor: default;
 }
 
 .mcq-opt.selected-wrong .opt-letter {
-    background: #FF453A;
+    background: var(--error);
     color: white;
 }
 
 .mcq-opt.show-correct {
-    border-color: rgba(52, 199, 89, 0.28);
-    background: rgba(52, 199, 89, 0.10);
+    border-color: var(--success-bg);
+    background: var(--success-bg);
     cursor: default;
 }
 
 .mcq-opt.show-correct .opt-letter {
-    background: #34C759;
+    background: var(--success);
     color: white;
 }
 
@@ -382,13 +382,13 @@
 }
 
 .explanation-box.correct {
-    border-color: rgba(52, 199, 89, 0.28);
-    background: rgba(52, 199, 89, 0.10);
+    border-color: var(--success-bg);
+    background: var(--success-bg);
 }
 
 .explanation-box.wrong {
-    border-color: rgba(255, 69, 58, 0.28);
-    background: rgba(255, 69, 58, 0.10);
+    border-color: var(--error-bg);
+    background: var(--error-bg);
 }
 
 .ex-head {
@@ -397,11 +397,11 @@
 }
 
 .explanation-box.correct .ex-head {
-    color: #34C759;
+    color: var(--success);
 }
 
 .explanation-box.wrong .ex-head {
-    color: #FF453A;
+    color: var(--error);
 }
 
 .ex-ref {
@@ -487,20 +487,20 @@
     padding: 13px 20px;
     margin-top: 10px;
     border-radius: 14px;
-    border: 1px solid rgba(255, 214, 10, 0.25);
-    background: rgba(255, 214, 10, 0.08);
+    border: 1px solid var(--warning-bg);
+    background: var(--warning-bg);
     font-size: 14px;
     font-weight: 600;
     font-family: var(--font-sans);
-    color: #FFD60A;
+    color: var(--warning);
     cursor: pointer;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .qz-btn-arena:hover {
-    background: rgba(255, 214, 10, 0.14);
-    border-color: rgba(255, 214, 10, 0.45);
-    box-shadow: 0 0 18px rgba(255, 214, 10, 0.15);
+    background: var(--warning-bg);
+    border-color: var(--warning-bg);
+    box-shadow: 0 0 18px var(--warning-bg);
 }
 
 /* ── Back button ── */
@@ -681,8 +681,8 @@
 }
 
 .mic-btn.recording {
-    background: linear-gradient(135deg, #FF453A, #FF6B6B);
-    box-shadow: 0 4px 24px rgba(255, 69, 58, 0.4);
+    background: linear-gradient(135deg, var(--error), var(--error));
+    box-shadow: 0 4px 24px var(--error-bg);
     animation: micPulse 1.2s ease-in-out infinite;
 }
 
@@ -690,12 +690,12 @@
 
     0%,
     100% {
-        box-shadow: 0 4px 24px rgba(255, 69, 58, 0.4);
+        box-shadow: 0 4px 24px var(--error-bg);
         transform: scale(1);
     }
 
     50% {
-        box-shadow: 0 4px 48px rgba(255, 69, 58, 0.7);
+        box-shadow: 0 4px 48px var(--error-bg);
         transform: scale(1.04);
     }
 }
@@ -705,7 +705,7 @@
     position: absolute;
     inset: -8px;
     border-radius: 50%;
-    border: 2px solid rgba(255, 69, 58, 0.3);
+    border: 2px solid var(--error-bg);
     animation: ringOut 1.5s ease-out infinite;
     pointer-events: none;
 }
@@ -744,7 +744,7 @@
 }
 
 .mic-status.active-s {
-    color: #FF453A;
+    color: var(--error);
     font-weight: 600;
 }
 
@@ -764,8 +764,8 @@
 }
 
 .live-transcript.listening {
-    border-color: rgba(255, 69, 58, 0.4);
-    box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.08);
+    border-color: var(--error-bg);
+    box-shadow: 0 0 0 3px var(--error-bg);
 }
 
 .transcript-placeholder {
@@ -822,21 +822,21 @@
 }
 
 .f-section.strong {
-    border-color: rgba(52, 199, 89, 0.28);
-    background: rgba(52, 199, 89, 0.10);
+    border-color: var(--success-bg);
+    background: var(--success-bg);
 }
 
 .f-section.strong .f-head {
-    color: #34C759;
+    color: var(--success);
 }
 
 .f-section.missing {
-    border-color: rgba(255, 149, 0, 0.28);
-    background: rgba(255, 149, 0, 0.10);
+    border-color: var(--warning-bg);
+    background: var(--warning-bg);
 }
 
 .f-section.missing .f-head {
-    color: #FF9500;
+    color: var(--warning);
 }
 
 .f-section.rewrite {
@@ -845,7 +845,7 @@
 }
 
 .f-section.rewrite .f-head {
-    color: #9B8BFF;
+    color: var(--accent2);
 }
 
 /* ── Divider ── */
@@ -885,7 +885,7 @@
     font-size: 56px;
     font-weight: 700;
     line-height: 1;
-    background: linear-gradient(135deg, var(--accent), #9B8BFF);
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -909,7 +909,7 @@
 .retention-fill {
     height: 100%;
     border-radius: 6px;
-    background: linear-gradient(90deg, var(--accent), #9B8BFF);
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
     width: var(--ret-width, 0%);
     transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }

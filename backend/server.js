@@ -218,6 +218,14 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
 
         let audioPath = cachePath;
 
+        if (fs.existsSync(cachePath)) {
+            const stat = fs.statSync(cachePath);
+            if (stat.size < 1000) {
+                console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
+                try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
+            }
+        }
+
         if (!fs.existsSync(cachePath)) {
             console.log(`[TTS] Cache MISS. Generating ${lang} audio for chunk (${normalizedText.length} chars) using voice ${finalVoice}...`);
             await waitForTtsSlot();

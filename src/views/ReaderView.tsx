@@ -9,6 +9,10 @@ interface ReaderViewProps {
     readingLanguage: 'english' | 'french';
     onFinish: () => void;
     onBack: () => void;
+    /** Pre-fetched TTS blob URL for sentence 0, fetched while on the input screen */
+    prewarmBlob?: { blob: Blob; voice: string; lang: string } | null;
+    /** Ref to the in-flight prewarm Promise (may still be pending when ReaderView mounts) */
+    prewarmPromiseRef?: React.RefObject<Promise<{ blob: Blob; voice: string; lang: string }> | null>;
 }
 
 type CacheItem = {
@@ -57,7 +61,11 @@ function estimateSyllables(word: string): number {
     return Math.max(1, count);
 }
 
-export default function ReaderView({ content, readingLanguage, onFinish, onBack }: ReaderViewProps) {
+export default function ReaderView({ content, readingLanguage, onFinish, onBack, prewarmBlob, prewarmPromiseRef }: ReaderViewProps) {
+    // Capture prewarm in a ref so playIndex can read the latest value without stale closure
+    const prewarmRef = useRef(prewarmBlob ?? null);
+    // Keep ref in sync if the blob resolves after mount (React state update)
+    useEffect(() => { prewarmRef.current = prewarmBlob ?? null; }, [prewarmBlob]);
     const effectiveContent = content?.trim() || "Hello, this is a playback test.";
     const { original: sentences, spoken: sentencesSpoken } = useSentenceSplitter(effectiveContent);
 
@@ -66,7 +74,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     const [speed, setSpeed] = useState(1);
     const [lastError, setLastError] = useState<string | null>(null);
     const [voiceUI, setVoiceUI] = useState<TTSVoice>(() => {
-        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'onyx';
+        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo';
     });
     const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
     const handleSpeedToggle = () => {
@@ -123,8 +131,6 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         a.preload = "auto";
         audioRef.current = a;
 
-        const cacheMap = cacheRef.current;
-
         const loop = () => {
             if (audioRef.current && audioRef.current.duration > 0 && !audioRef.current.paused) {
                 setSentenceProgress(audioRef.current.currentTime / audioRef.current.duration);
@@ -163,6 +169,9 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             a.onended = null;
             a.onerror = null;
 
+            const urlToRevoke = currentObjectUrlRef.current;
+            const itemsToRevoke = Array.from(cacheRef.current.values());
+
             // Defers cleanup to prevent unhandled extension promises
             setTimeout(() => {
                 try {
@@ -172,10 +181,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
                 } catch (e) {
                     console.debug("[PlayLearn] Ignored extension channel error on unmount", e);
                 }
-                safeRevoke(currentObjectUrlRef.current);
-                currentObjectUrlRef.current = null;
-                for (const item of cacheMap.values()) safeRevoke(item.url);
-                cacheMap.clear();
+                safeRevoke(urlToRevoke);
+                for (const item of itemsToRevoke) safeRevoke(item.url);
             }, 0);
 
             audioRef.current = null;
@@ -346,14 +353,90 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
         if (!a) return;
         a.playbackRate = speed;
 
-        const cached = cacheRef.current.get(idx);
-        if (cached) {
-            console.log(`[PlayLearn] cache hit idx=${idx} bytes=${cached.byteLength}`);
-            safeRevoke(currentObjectUrlRef.current);
-            currentObjectUrlRef.current = cached.url; // claim ownership
-            cacheRef.current.delete(idx);
-            a.src = currentObjectUrlRef.current;
-            a.load(); // pre-warm browser decoder for instant start
+        // ── FAST PATH: use pre-warmed blob for sentence 0 if voice+lang match ──
+        const currentLang = readingLanguage === 'french' ? 'fr' : 'en';
+        const isIdx0 = idx === 0;
+
+        // Helper: check if a resolved prewarm result matches current voice/lang
+        const prewarmFits = (p: { blob: Blob; voice: string; lang: string } | null | undefined): p is { blob: Blob; voice: string; lang: string } =>
+            !!p && p.voice === voiceRef.current && p.lang === currentLang;
+
+        if (isIdx0) {
+            // 1. Already resolved into React state (blob prop)
+            if (prewarmFits(prewarmRef.current)) {
+                console.log('[PlayLearn] PREWARM HIT (blob ready) for idx=0 — skipping TTS fetch');
+                safeRevoke(currentObjectUrlRef.current);
+                currentObjectUrlRef.current = URL.createObjectURL(prewarmRef.current.blob);
+                a.src = currentObjectUrlRef.current;
+                a.load();
+            } else if (prewarmPromiseRef?.current) {
+                // 2. Fetch is still in-flight — await it directly (no duplicate request)
+                console.log('[PlayLearn] PREWARM AWAITING in-flight promise for idx=0');
+                try {
+                    const result = await prewarmPromiseRef.current;
+                    prewarmPromiseRef.current = null;
+                    if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+                    if (prewarmFits(result)) {
+                        console.log('[PlayLearn] PREWARM HIT (awaited) for idx=0, bytes ready');
+                        safeRevoke(currentObjectUrlRef.current);
+                        currentObjectUrlRef.current = URL.createObjectURL(result.blob);
+                        a.src = currentObjectUrlRef.current;
+                        a.load();
+                    } else {
+                        const r = result as any;
+                        console.log(`[PlayLearn] PREWARM MISMATCH! prewarm: ${r?.voice}/${r?.lang}, reader: ${voiceRef.current}/${currentLang}`);
+                        // voice/lang mismatch after await — fall through to fresh fetch below
+                        throw new Error('voice/lang mismatch');
+                    }
+                } catch {
+                    // Promise rejected (network error or mismatch) — fall through to normal fetch
+                    try {
+                        const text = sentencesSpoken[0]?.trim() || 'Test.';
+                        const { buf, contentType } = await fetchTts(text, abortRef.current!.signal);
+                        if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+                        const built = blobUrlFrom(buf, contentType);
+                        safeRevoke(currentObjectUrlRef.current);
+                        currentObjectUrlRef.current = built.url;
+                        a.src = currentObjectUrlRef.current;
+                        a.load();
+                    } catch (e: unknown) {
+                        if (isStoppedRef.current) return;
+                        if ((e instanceof Error ? e.name : '') === 'AbortError') return;
+                        setPlaybackState('error');
+                        setLastError(`Fetch error: ${e instanceof Error ? e.message : String(e)}`);
+                        return;
+                    }
+                }
+            } else {
+                // 3. No prewarm at all — check regular cache then fetch
+                const cached = cacheRef.current.get(idx);
+                if (cached) {
+                    console.log(`[PlayLearn] cache hit idx=${idx} bytes=${cached.byteLength}`);
+                    safeRevoke(currentObjectUrlRef.current);
+                    currentObjectUrlRef.current = cached.url;
+                    cacheRef.current.delete(idx);
+                    a.src = currentObjectUrlRef.current;
+                    a.load();
+                } else {
+                    console.log('[PlayLearn] No prewarm, cache miss idx=0 — fetching fresh');
+                    const text = sentencesSpoken[0]?.trim() || 'Test.';
+                    try {
+                        const { buf, contentType } = await fetchTts(text, abortRef.current!.signal);
+                        if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+                        const built = blobUrlFrom(buf, contentType);
+                        safeRevoke(currentObjectUrlRef.current);
+                        currentObjectUrlRef.current = built.url;
+                        a.src = currentObjectUrlRef.current;
+                        a.load();
+                    } catch (e: unknown) {
+                        if (isStoppedRef.current) return;
+                        if ((e instanceof Error ? e.name : '') === 'AbortError') return;
+                        setPlaybackState('error');
+                        setLastError(`Fetch error: ${e instanceof Error ? e.message : String(e)}`);
+                        return;
+                    }
+                }
+            }
         } else {
             console.log(`[PlayLearn] cache miss idx=${idx} fetching...`);
             const text = sentencesSpoken[idx]?.trim();
@@ -447,6 +530,10 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
                 }, 300);
             }
         } catch (e: unknown) {
+            if (isStoppedRef.current || runIdRef.current !== runIdAtStart) {
+                console.debug("[PlayLearn] a.play() rejected but run was stopped. Ignoring error.");
+                return;
+            }
             setPlaybackState("error");
             const errName = e instanceof Error ? e.name : "Error";
             const errMsg = e instanceof Error ? e.message : String(e);
@@ -457,7 +544,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
             inFlightPlayRef.current = null;
         }
 
-    }, [fetchTts, prefetchSingle, speed, onFinish, sentences, sentencesSpoken]);
+    }, [fetchTts, prefetchSingle, speed, onFinish, sentences, sentencesSpoken, readingLanguage, prewarmPromiseRef]);
 
     useEffect(() => {
         if (speed > maxSpeedUsedRef.current) maxSpeedUsedRef.current = speed;
@@ -472,17 +559,18 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
 
     // Auto-start playback on mount
     useEffect(() => {
-        if (sentences.length > 0 && playbackState === 'idle' && isStoppedRef.current) {
+        if (sentences.length > 0 && isStoppedRef.current) {
             runIdRef.current += 1;
             isStoppedRef.current = false;
             setLastError(null);
             abortRef.current = new AbortController();
             playIndex(0, runIdRef.current).catch((e: unknown) => {
+                if (isStoppedRef.current || runIdRef.current !== runIdRef.current) return;
                 setPlaybackState("error");
                 setLastError(e instanceof Error ? e.message : String(e));
             });
         }
-    }, [sentences.length, playbackState, playIndex]);
+    }, [sentences.length, playIndex]);
 
     const togglePlay = () => {
         console.log("[PlayLearn] togglePlay clicked, text length =", effectiveContent.length);
@@ -548,14 +636,14 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack 
     };
 
     const [isScrolled, setIsScrolled] = useState(false);
-    const [theme, setTheme] = useState<'night' | 'light' | 'sepia' | 'forest'>('night');
+    const [theme, setTheme] = useState<'night' | 'light' | 'sepia' | 'forest'>('sepia');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     useEffect(() => {
-        const storedTheme = (localStorage.getItem('playlearn_theme') as string) || 'night';
+        const storedTheme = (localStorage.getItem('playlearn_theme') as string) || 'sepia';
         setTheme(storedTheme as 'night' | 'light' | 'sepia' | 'forest');
         if (storedTheme !== 'night') {
-            document.documentElement.setAttribute('data-theme', storedTheme);
+            document.documentElement.setAttribute('data-theme', storedTheme || 'sepia');
         } else {
             document.documentElement.removeAttribute('data-theme');
         }

@@ -187,7 +187,7 @@
     position: absolute;
     inset: -1px;
     border-radius: 21px;
-    background: linear-gradient(135deg, var(--accent-glow), rgba(6, 182, 212, 0.2), var(--accent-dim));
+    background: linear-gradient(135deg, var(--accent-glow), var(--info-bg), var(--accent-dim));
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
@@ -716,7 +716,7 @@
 }
 
 .test-error {
-    color: #FF453A;
+    color: var(--error);
     font-size: 0.75rem;
 }
 
@@ -746,7 +746,7 @@
 }
 
 .text-blue {
-    color: #0A84FF;
+    color: var(--info);
 }
 
 .text-green {
@@ -754,7 +754,7 @@
 }
 
 .text-red {
-    color: #FF453A;
+    color: var(--error);
 }
 
 /* ── Responsive ── */

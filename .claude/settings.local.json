@@ -6,7 +6,10 @@
       "Bash(ls:*)",
       "Bash(python3:*)",
       "Bash(node:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(netstat:*)",
+      "Bash(start:*)"
     ]
   }
 }
