@@ -58,7 +58,7 @@ const globalLimiter = rateLimit({
 // Strict Rate Limiter for TTS
 const ttsLimiter = rateLimit({
     windowMs: 60 * 1000,
-    limit: 20,
+    limit: 200,
     message: { error: 'Too many TTS requests, please try again later.' },
     standardHeaders: 'draft-7',
     legacyHeaders: false,
@@ -74,7 +74,7 @@ const aiLimiter = rateLimit({
 });
 
 app.use(cors({
-    origin: '*',
+    origin: process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : ['http://localhost:5173', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));

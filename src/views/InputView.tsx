@@ -1,11 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Loader2, Paperclip } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
 import { splitSentences } from '../hooks/useSentenceSplitter';
 import './InputView.css';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
@@ -198,6 +194,10 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
     const extractTextFromPdf = async (file: File) => {
         try {
             setIsExtracting(true);
+            const pdfjsLib = await import('pdfjs-dist');
+            const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min?url');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+            
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let fullText = '';

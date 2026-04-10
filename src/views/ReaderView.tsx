@@ -170,7 +170,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             a.onerror = null;
 
             const urlToRevoke = currentObjectUrlRef.current;
-            const itemsToRevoke = Array.from(cacheRef.current.values());
+            const currentCache = cacheRef.current;
+            const itemsToRevoke = Array.from(currentCache.values());
 
             // Defers cleanup to prevent unhandled extension promises
             setTimeout(() => {
@@ -353,7 +354,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         if (!a) return;
         a.playbackRate = speed;
 
-        // ── FAST PATH: use pre-warmed blob for sentence 0 if voice+lang match ──
+        // ── RESOLVE AUDIO SOURCE ──
         const currentLang = readingLanguage === 'french' ? 'fr' : 'en';
         const isIdx0 = idx === 0;
 
@@ -361,16 +362,21 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         const prewarmFits = (p: { blob: Blob; voice: string; lang: string } | null | undefined): p is { blob: Blob; voice: string; lang: string } =>
             !!p && p.voice === voiceRef.current && p.lang === currentLang;
 
-        if (isIdx0) {
-            // 1. Already resolved into React state (blob prop)
+        let audioUrlToPlay: string | null = null;
+
+        // 1. Check runtime cache first (for all indices)
+        const cached = cacheRef.current.get(idx);
+        if (cached) {
+            console.log(`[PlayLearn] cache hit idx=${idx} bytes=${cached.byteLength}`);
+            audioUrlToPlay = cached.url;
+            cacheRef.current.delete(idx);
+        }
+        // 2. Otherwise check prewarm for idx=0
+        else if (isIdx0) {
             if (prewarmFits(prewarmRef.current)) {
                 console.log('[PlayLearn] PREWARM HIT (blob ready) for idx=0 — skipping TTS fetch');
-                safeRevoke(currentObjectUrlRef.current);
-                currentObjectUrlRef.current = URL.createObjectURL(prewarmRef.current.blob);
-                a.src = currentObjectUrlRef.current;
-                a.load();
+                audioUrlToPlay = URL.createObjectURL(prewarmRef.current.blob);
             } else if (prewarmPromiseRef?.current) {
-                // 2. Fetch is still in-flight — await it directly (no duplicate request)
                 console.log('[PlayLearn] PREWARM AWAITING in-flight promise for idx=0');
                 try {
                     const result = await prewarmPromiseRef.current;
@@ -378,91 +384,40 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
                     if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
                     if (prewarmFits(result)) {
                         console.log('[PlayLearn] PREWARM HIT (awaited) for idx=0, bytes ready');
-                        safeRevoke(currentObjectUrlRef.current);
-                        currentObjectUrlRef.current = URL.createObjectURL(result.blob);
-                        a.src = currentObjectUrlRef.current;
-                        a.load();
+                        audioUrlToPlay = URL.createObjectURL(result.blob);
                     } else {
-                        const r = result as any;
-                        console.log(`[PlayLearn] PREWARM MISMATCH! prewarm: ${r?.voice}/${r?.lang}, reader: ${voiceRef.current}/${currentLang}`);
-                        // voice/lang mismatch after await — fall through to fresh fetch below
-                        throw new Error('voice/lang mismatch');
+                        console.log(`[PlayLearn] PREWARM MISMATCH!`);
                     }
                 } catch {
-                    // Promise rejected (network error or mismatch) — fall through to normal fetch
-                    try {
-                        const text = sentencesSpoken[0]?.trim() || 'Test.';
-                        const { buf, contentType } = await fetchTts(text, abortRef.current!.signal);
-                        if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
-                        const built = blobUrlFrom(buf, contentType);
-                        safeRevoke(currentObjectUrlRef.current);
-                        currentObjectUrlRef.current = built.url;
-                        a.src = currentObjectUrlRef.current;
-                        a.load();
-                    } catch (e: unknown) {
-                        if (isStoppedRef.current) return;
-                        if ((e instanceof Error ? e.name : '') === 'AbortError') return;
-                        setPlaybackState('error');
-                        setLastError(`Fetch error: ${e instanceof Error ? e.message : String(e)}`);
-                        return;
-                    }
-                }
-            } else {
-                // 3. No prewarm at all — check regular cache then fetch
-                const cached = cacheRef.current.get(idx);
-                if (cached) {
-                    console.log(`[PlayLearn] cache hit idx=${idx} bytes=${cached.byteLength}`);
-                    safeRevoke(currentObjectUrlRef.current);
-                    currentObjectUrlRef.current = cached.url;
-                    cacheRef.current.delete(idx);
-                    a.src = currentObjectUrlRef.current;
-                    a.load();
-                } else {
-                    console.log('[PlayLearn] No prewarm, cache miss idx=0 — fetching fresh');
-                    const text = sentencesSpoken[0]?.trim() || 'Test.';
-                    try {
-                        const { buf, contentType } = await fetchTts(text, abortRef.current!.signal);
-                        if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
-                        const built = blobUrlFrom(buf, contentType);
-                        safeRevoke(currentObjectUrlRef.current);
-                        currentObjectUrlRef.current = built.url;
-                        a.src = currentObjectUrlRef.current;
-                        a.load();
-                    } catch (e: unknown) {
-                        if (isStoppedRef.current) return;
-                        if ((e instanceof Error ? e.name : '') === 'AbortError') return;
-                        setPlaybackState('error');
-                        setLastError(`Fetch error: ${e instanceof Error ? e.message : String(e)}`);
-                        return;
-                    }
+                    // Promise rejected — fall through
                 }
             }
-        } else {
-            console.log(`[PlayLearn] cache miss idx=${idx} fetching...`);
-            const text = sentencesSpoken[idx]?.trim();
-            const safeText = text && text.length > 0 ? text : "Test.";
+        }
 
+        // 3. Fallback fetch fresh
+        if (!audioUrlToPlay) {
+            console.log(`[PlayLearn] cache miss idx=${idx} fetching fresh...`);
+            const text = sentencesSpoken[idx]?.trim() || "Test.";
             try {
                 const ac = abortRef.current;
                 if (!ac) return;
-
-                const { buf, contentType } = await fetchTts(safeText, ac.signal);
+                const { buf, contentType } = await fetchTts(text, ac.signal);
                 if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
-
                 const built = blobUrlFrom(buf, contentType);
-                safeRevoke(currentObjectUrlRef.current);
-                currentObjectUrlRef.current = built.url;
-                a.src = currentObjectUrlRef.current;
-                a.load(); // pre-warm browser decoder for instant start
+                audioUrlToPlay = built.url;
             } catch (e: unknown) {
                 if (isStoppedRef.current) return;
-                const errName = e instanceof Error ? e.name : "Error";
-                if (errName === "AbortError") return;
-                setPlaybackState("error");
+                if ((e instanceof Error ? e.name : '') === 'AbortError') return;
+                setPlaybackState('error');
                 setLastError(`Fetch error: ${e instanceof Error ? e.message : String(e)}`);
                 return;
             }
         }
+
+        safeRevoke(currentObjectUrlRef.current);
+        currentObjectUrlRef.current = audioUrlToPlay;
+        a.src = currentObjectUrlRef.current;
+        a.load();
 
         if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
 

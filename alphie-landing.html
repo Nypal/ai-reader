@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alphie — Read Smarter. Learn Deeper.</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #0A0A0F;
+            --surface: #13131A;
+            --surface2: #1A1A26;
+            --border: rgba(255, 255, 255, 0.07);
+            --violet: #7C6AF7;
+            --violet-glow: rgba(124, 106, 247, 0.2);
+            --cyan: #06B6D4;
+            --text: #E8E8F0;
+            --muted: #6B6B8A;
+            --warm: #F59E0B;
+        }
+
+        html,
+        body {
+            background: #0A0A0F;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            overflow-x: hidden;
+            cursor: default;
+        }
+
+        /* ANIMATED BACKGROUND MESH */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 50% at 20% 10%, rgba(124, 106, 247, 0.12) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 40% 60% at 60% 30%, rgba(245, 158, 11, 0.04) 0%, transparent 40%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* NAV */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 48px;
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: 'Playfair Display', serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .nav-logo .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--violet), var(--cyan));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 36px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: #6B6B8A;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: white;
+        }
+
+        .nav-cta {
+            background: #7C6AF7;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 100px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 20px rgba(124, 106, 247, 0.3);
+        }
+
+        .nav-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 30px rgba(124, 106, 247, 0.5);
+        }
+
+        /* HERO */
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+        }
+
+        .hero-content {
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(124, 106, 247, 0.1);
+            border: 1px solid rgba(124, 106, 247, 0.3);
+            border-radius: 100px;
+            padding: 6px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #7C6AF7;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 32px;
+            animation: fadeUp 0.6s ease both;
+        }
+
+        .hero-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--violet);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+        }
+
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(52px, 8vw, 96px);
+            font-weight: 900;
+            line-height: 1.0;
+            margin-bottom: 24px;
+            animation: fadeUp 0.6s ease 0.1s both;
+        }
+
+        .hero h1 .accent {
+            background: linear-gradient(135deg, #7C6AF7, #06B6D4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-style: italic;
+        }
+
+        .hero-sub {
+            font-size: 20px;
+            color: #6B6B8A;
+            line-height: 1.6;
+            max-width: 560px;
+            margin: 0 auto 48px;
+            font-weight: 300;
+            text-align: center;
+            animation: fadeUp 0.6s ease 0.2s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeUp 0.6s ease 0.3s both;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--violet), #9B8BFF);
+            color: white;
+            border: none;
+            padding: 16px 36px;
+            border-radius: 100px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 8px 32px rgba(124, 106, 247, 0.4);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(124, 106, 247, 0.6);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 16px 36px;
+            border-radius: 100px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-secondary:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        /* HERO DEMO CARD */
+        .hero-demo {
+            position: relative;
+            z-index: 1;
+            max-width: 680px;
+            width: 100%;
+            margin: 40px auto 0;
+            animation: fadeUp 0.8s ease 0.4s both;
+        }
+
+        .demo-card {
+            background: #13131A;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+            text-align: left;
+        }
+
+        .demo-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #7C6AF7, #06B6D4);
+        }
+
+        .demo-sentence {
+            font-size: 17px;
+            line-height: 1.8;
+            color: #6B6B8A;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: all 0.25s;
+        }
+
+        .demo-sentence.active {
+            color: #E8E8F0;
+            background: rgba(124, 106, 247, 0.08);
+            box-shadow: inset 3px 0 0 #7C6AF7;
+        }
+
+        .demo-sentence .word {
+            display: inline;
+        }
+
+        .demo-sentence .word.lit {
+            background: rgba(124, 106, 247, 0.25);
+            color: white;
+            border-radius: 3px;
+            padding: 1px 3px;
+        }
+
+        .demo-player {
+            margin-top: 24px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 100px;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .demo-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .demo-btn.play {
+            width: 48px;
+            height: 48px;
+            background: #7C6AF7;
+            border: none;
+            color: white;
+            font-size: 18px;
+            box-shadow: 0 0 20px rgba(124, 106, 247, 0.4);
+        }
+
+        .demo-speed {
+            font-size: 13px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .demo-voice {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        /* STATS STRIP */
+        .stats {
+            position: relative;
+            z-index: 1;
+            padding: 48px;
+            display: flex;
+            justify-content: center;
+            gap: 80px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-num {
+            font-family: 'Playfair Display', serif;
+            font-size: 48px;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--violet), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--muted);
+            margin-top: 4px;
+            font-weight: 400;
+        }
+
+        /* FEATURES SECTION */
+        .section {
+            position: relative;
+            z-index: 1;
+            padding: 120px 48px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--violet);
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(36px, 5vw, 56px);
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            margin-bottom: 24px;
+        }
+
+        .section-sub {
+            font-size: 18px;
+            color: var(--muted);
+            line-height: 1.6;
+            max-width: 500px;
+            font-weight: 300;
+        }
+
+        /* FEATURES GRID */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 64px;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 80% 80% at 50% 0%, var(--violet-glow), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(124, 106, 247, 0.3);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .feature-icon.violet {
+            background: rgba(124, 106, 247, 0.15);
+        }
+
+        .feature-icon.cyan {
+            background: rgba(6, 182, 212, 0.15);
+        }
+
+        .feature-icon.warm {
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        .feature-icon.green {
+            background: rgba(34, 197, 94, 0.15);
+        }
+
+        .feature-icon.pink {
+            background: rgba(236, 72, 153, 0.15);
+        }
+
+        .feature-icon.blue {
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .feature-card p {
+            font-size: 14px;
+            color: var(--muted);
+            line-height: 1.6;
+            position: relative;
+        }
+
+        /* LEARNING SCIENCE SECTION */
+        .science-section {
+            position: relative;
+            z-index: 1;
+            padding: 120px 48px;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .science-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 80px;
+            align-items: center;
+        }
+
+        .science-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            margin-top: 48px;
+        }
+
+        .science-step {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .step-num {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--violet), var(--cyan));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .step-content h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .step-content p {
+            font-size: 14px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        /* QUIZ MOCKUP */
+        .quiz-mockup {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.4);
+        }
+
+        .quiz-mockup .q-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            margin-bottom: 16px;
+        }
+
+        .quiz-mockup .q-text {
+            font-size: 16px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .quiz-option {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            margin-bottom: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .quiz-option:hover {
+            border-color: rgba(124, 106, 247, 0.4);
+            background: rgba(124, 106, 247, 0.05);
+        }
+
+        .quiz-option.correct {
+            border-color: #22C55E;
+            background: rgba(34, 197, 94, 0.1);
+            color: #22C55E;
+        }
+
+        .quiz-option.wrong {
+            border-color: #EF4444;
+            background: rgba(239, 68, 68, 0.1);
+            color: #EF4444;
+        }
+
+        .quiz-letter {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .correct .quiz-letter {
+            background: #22C55E;
+            color: white;
+        }
+
+        .wrong .quiz-letter {
+            background: #EF4444;
+            color: white;
+        }
+
+        /* FEYNMAN SECTION */
+        .feynman-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            margin-top: 20px;
+        }
+
+        .feynman-card .f-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .feynman-card .f-title span {
+            color: var(--violet);
+        }
+
+        .feynman-card .f-sub {
+            font-size: 14px;
+            color: var(--muted);
+            margin-bottom: 16px;
+        }
+
+        .feynman-area {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 14px;
+            color: var(--muted);
+            min-height: 80px;
+            line-height: 1.6;
+        }
+
+        .feynman-hints {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .hint-pill {
+            background: rgba(124, 106, 247, 0.1);
+            border: 1px solid rgba(124, 106, 247, 0.2);
+            border-radius: 100px;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: var(--violet);
+        }
+
+        /* VOICES SECTION */
+        .voices-section {
+            position: relative;
+            z-index: 1;
+            padding: 120px 48px;
+            max-width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .voices-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 56px;
+        }
+
+        .voice-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: left;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .voice-card:hover {
+            border-color: rgba(124, 106, 247, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .voice-card.featured {
+            border-color: var(--violet);
+            background: rgba(124, 106, 247, 0.08);
+        }
+
+        .voice-wave {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+
+        .voice-name {
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .voice-desc {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .voice-tag {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--violet);
+        }
+
+        /* THEMES */
+        .themes-showcase {
+            display: flex;
+            gap: 16px;
+            margin-top: 48px;
+            justify-content: center;
+        }
+
+        .theme-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            border-radius: 100px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .theme-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .theme-pill.light {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+        }
+
+        .theme-pill.dark {
+            background: rgba(10, 10, 15, 0.8);
+            color: var(--text);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .theme-pill.sepia {
+            background: rgba(232, 220, 200, 0.1);
+            color: #D4B896;
+            border-color: rgba(212, 184, 150, 0.3);
+        }
+
+        /* CTA SECTION */
+        .cta-section {
+            position: relative;
+            z-index: 1;
+            padding: 120px 48px;
+            text-align: center;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+        }
+
+        .cta-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 300px;
+            background: radial-gradient(ellipse, rgba(124, 106, 247, 0.15), transparent 70%);
+            pointer-events: none;
+        }
+
+        .cta-section h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(40px, 6vw, 72px);
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            position: relative;
+        }
+
+        .cta-section p {
+            font-size: 18px;
+            color: var(--muted);
+            margin-bottom: 48px;
+            font-weight: 300;
+            position: relative;
+        }
+
+        /* FOOTER */
+        footer {
+            position: relative;
+            z-index: 1;
+            padding: 48px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        footer .footer-logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        footer p {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        /* ANIMATIONS */
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(24px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        @keyframes wordFlip {
+            0% {
+                opacity: 0.3;
+                transform: scale(0.95);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* WORD ANIMATION */
+        .word-highlight {
+            display: inline-block;
+            animation: wordFlip 0.15s ease forwards;
+        }
+
+        /* SCROLL ANIMATIONS */
+        .reveal {
+            opacity: 0;
+            transform: translateY(32px);
+            transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: none;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            nav {
+                padding: 16px 24px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .section,
+            .voices-section {
+                padding: 80px 24px;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .voices-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .science-inner {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                gap: 40px;
+                padding: 40px 24px;
+            }
+
+            footer {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+
+        /* ANIMATED DEMO */
+        .demo-word {
+            transition: all 0.2s;
+            border-radius: 3px;
+            padding: 1px 2px;
+        }
+
+        .demo-word.active-word {
+            background: rgba(124, 106, 247, 0.35);
+            color: white;
+            font-weight: 600;
+        }
+
+        .demo-word.past-word {
+            color: #6B6B8A;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- NAV -->
+    <nav>
+        <a href="#" class="nav-logo">
+            <div class="logo-icon">📖</div>
+            Alphie
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#science">Learning Science</a></li>
+            <li><a href="#voices">Voices</a></li>
+        </ul>
+        <button class="nav-cta" onclick="window.open('http://localhost:5173','_blank')">
+            Open App
+        </button>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">AI-POWERED READING &amp; LEARNING</div>
+            <h1>Read Smarter.<br><span class="accent">Learn Deeper.</span></h1>
+            <p class="hero-sub">Alphie listens with you, highlights every word in real-time, then tests your
+                comprehension with science-backed quizzes and the Feynman Test.</p>
+            <div class="hero-actions">
+                <a href="http://localhost:5173" target="_blank" class="btn-primary">▶ Open Alphie</a>
+                <a href="#features" class="btn-secondary">See How It Works →</a>
+            </div>
+        </div>
+
+        <!-- DEMO CARD -->
+        <div class="hero-demo">
+            <div class="demo-card">
+                <div class="demo-sentence" style="opacity:0.4">Threat actors can use a diverse range of techniques to
+                    compromise a security system.</div>
+                <div class="demo-sentence active" id="demo-active">
+                    A prerequisite of many attacks is to obtain
+                    <span class="demo-word past-word">information</span>
+                    <span class="demo-word past-word">about</span>
+                    <span class="demo-word past-word">the</span>
+                    <span class="demo-word active-word" id="current-word">network</span>
+                    <span class="demo-word">and</span>
+                    <span class="demo-word">its</span>
+                    <span class="demo-word">security</span>
+                    <span class="demo-word">controls.</span>
+                </div>
+                <div class="demo-sentence" style="opacity:0.4">Social engineering refers to techniques that persuade
+                    people into revealing confidential information.</div>
+
+                <div class="demo-player">
+                    <button class="demo-btn">⏮</button>
+                    <button class="demo-btn play" id="play-btn" onclick="togglePlay()">▶</button>
+                    <button class="demo-btn">⏭</button>
+                    <span class="demo-speed">1.0×</span>
+                    <span class="demo-voice">🎙 Onyx</span>
+                    <span id="tts-status" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+                </div>
+
+                <!-- REAL TTS DEMO -->
+                <div style="margin-top:16px;text-align:center;display:none;">
+                    <button onclick="playRealTTS()" id="real-tts-btn"
+                        style="background:rgba(124,106,247,0.15);border:1px solid rgba(124,106,247,0.3);color:var(--violet);border-radius:100px;padding:8px 20px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                        🔊 Hear Real AI Voice Demo
+                    </button>
+                    <p style="font-size:11px;color:var(--muted);margin-top:6px">Requires Alphie backend running on
+                        localhost:3001</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- STATS -->
+    <div class="stats">
+        <div class="stat reveal">
+            <div class="stat-num">3×</div>
+            <div class="stat-label">Faster Comprehension</div>
+        </div>
+        <div class="stat reveal">
+            <div class="stat-num">6</div>
+            <div class="stat-label">AI Voice Options</div>
+        </div>
+        <div class="stat reveal">
+            <div class="stat-num">2</div>
+            <div class="stat-label">Languages Supported</div>
+        </div>
+        <div class="stat reveal">
+            <div class="stat-num">100%</div>
+            <div class="stat-label">Science-Backed Learning</div>
+        </div>
+    </div>
+
+    <!-- FEATURES -->
+    <section class="section" id="features">
+        <div class="reveal">
+            <div class="section-label">Core Features</div>
+            <h2 class="section-title">Everything you need<br>to <em
+                    style="font-style:italic;color:var(--violet)">actually</em> learn.</h2>
+            <p class="section-sub">Not just text-to-speech. A complete cognitive learning system built around how your
+                brain retains information.</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card reveal">
+                <div class="feature-icon violet">🎙</div>
+                <h3>Neural Text-to-Speech</h3>
+                <p>Powered by OpenAI's most advanced TTS. Six voices from deep authoritative to soft and gentle. Reads
+                    like a human narrator, not a robot.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon cyan">✨</div>
+                <h3>Word-by-Word Spotlight</h3>
+                <p>Every single word lights up exactly as it's spoken. Your eyes follow effortlessly. No more losing
+                    your place. Pure focus, zero effort.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon warm">🧠</div>
+                <h3>Active Recall Quizzes</h3>
+                <p>After reading, AI generates comprehension, inference, and application questions. Answer choices
+                    hidden until you try to recall. Science proves this doubles retention.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon green">🔬</div>
+                <h3>The Feynman Test</h3>
+                <p>Explain what you read in your own words. AI evaluates your understanding, highlights what you got
+                    right, and coaches you on what to add.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon pink">🎯</div>
+                <h3>Focus Reader Mode</h3>
+                <p>All sentences except the active one dim to 25% opacity. Your brain locks onto one idea at a time.
+                    Cognitive load drops dramatically.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon blue">🌍</div>
+                <h3>English &amp; French</h3>
+                <p>Switch between English and French reading mode. The TTS engine uses native pronunciation for each
+                    language. Paste your text, choose your language, listen naturally.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- LEARNING SCIENCE -->
+    <div class="science-section" id="science">
+        <div class="science-inner">
+            <div class="reveal">
+                <div class="section-label">Built on Research</div>
+                <h2 class="section-title" style="font-size:clamp(32px,4vw,48px)">The science behind every feature.</h2>
+                <p class="section-sub" style="font-size:16px">Alphie isn't a study tool. It's a learning system designed
+                    around how memory actually works.</p>
+
+                <div class="science-steps">
+                    <div class="science-step">
+                        <div class="step-num">1</div>
+                        <div class="step-content">
+                            <h4>Active Recall</h4>
+                            <p>Testing yourself from memory is 50% more effective than rereading. Every quiz forces
+                                retrieval before showing answers.</p>
+                        </div>
+                    </div>
+                    <div class="science-step">
+                        <div class="step-num">2</div>
+                        <div class="step-content">
+                            <h4>Spaced Repetition</h4>
+                            <p>Wrong answers are saved as "Concepts to Review Tomorrow." The app tells you exactly what
+                                to study next session.</p>
+                        </div>
+                    </div>
+                    <div class="science-step">
+                        <div class="step-num">3</div>
+                        <div class="step-content">
+                            <h4>The Feynman Technique</h4>
+                            <p>If you can explain it simply, you truly understand it. The AI evaluates your explanation
+                                and tells you what's missing.</p>
+                        </div>
+                    </div>
+                    <div class="science-step">
+                        <div class="step-num">4</div>
+                        <div class="step-content">
+                            <h4>Depth of Field Focus</h4>
+                            <p>Research shows peripheral contrast reduces cognitive load. Active sentences glow.
+                                Everything else recedes. Your brain locks in.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="reveal">
+                <div class="quiz-mockup">
+                    <div class="q-label">Active Recall Quiz — Question 2 of 5</div>
+                    <div class="q-text">What is the PRIMARY goal of social engineering in cybersecurity attacks?</div>
+                    <div class="quiz-option correct">
+                        <div class="quiz-letter">A</div>
+                        Persuade people into revealing confidential information
+                    </div>
+                    <div class="quiz-option wrong">
+                        <div class="quiz-letter">B</div>
+                        Exploit software vulnerabilities directly
+                    </div>
+                    <div class="quiz-option">
+                        <div class="quiz-letter">C</div>
+                        Install malware on target systems
+                    </div>
+                    <div class="quiz-option">
+                        <div class="quiz-letter">D</div>
+                        Intercept network communications
+                    </div>
+                </div>
+
+                <div class="feynman-card">
+                    <div class="f-title">📝 <span>The Feynman Test</span></div>
+                    <div class="f-sub">Explain the main ideas in your own words, as if teaching a friend.</div>
+                    <div class="feynman-area">Attackers first gather information about a target network before launching
+                        an attack. Social engineering tricks people into giving up this information...</div>
+                    <div class="feynman-hints">
+                        <div class="hint-pill">✓ Strong points</div>
+                        <div class="hint-pill">💡 What to add next time</div>
+                        <div class="hint-pill">✏️ Try rewriting this</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VOICES -->
+    <section class="voices-section reveal" id="voices">
+        <div class="section-label">Voice Selection</div>
+        <h2 class="section-title">Find the voice that<br>helps you <em
+                style="font-style:italic;color:var(--cyan)">focus.</em></h2>
+        <p class="section-sub" style="margin:0 auto;text-align:center">Six distinct AI voices. Preview any before you
+            start. Your choice is remembered next session.</p>
+
+        <div class="voices-grid">
+            <div class="voice-card featured">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Onyx</div>
+                <div class="voice-desc">Deep, authoritative male narrator. Perfect for technical content and long study
+                    sessions.</div>
+                <div class="voice-tag">★ Most Popular</div>
+            </div>
+            <div class="voice-card">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Echo</div>
+                <div class="voice-desc">Calm, clear male voice. Clean and precise for academic and professional
+                    material.</div>
+                <div class="voice-tag">Great for focus</div>
+            </div>
+            <div class="voice-card">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Fable</div>
+                <div class="voice-desc">Warm storytelling voice. Makes even dense material feel engaging and natural.
+                </div>
+                <div class="voice-tag">Most engaging</div>
+            </div>
+            <div class="voice-card">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Nova</div>
+                <div class="voice-desc">Clear, friendly female voice. Energetic and encouraging for motivation during
+                    study.</div>
+                <div class="voice-tag">Clear &amp; bright</div>
+            </div>
+            <div class="voice-card">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Shimmer</div>
+                <div class="voice-desc">Soft, gentle female voice. Ideal for relaxed evening reading and light material.
+                </div>
+                <div class="voice-tag">Calm &amp; gentle</div>
+            </div>
+            <div class="voice-card">
+                <div class="voice-wave">🎙</div>
+                <div class="voice-name">Alloy</div>
+                <div class="voice-desc">Neutral, balanced voice. A versatile all-rounder for any type of content.</div>
+                <div class="voice-tag">Versatile</div>
+            </div>
+        </div>
+
+        <!-- THEMES -->
+        <div style="margin-top:80px" class="reveal">
+            <div class="section-label">Reading Themes</div>
+            <h3 style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;margin-bottom:16px">Comfort
+                for every hour.</h3>
+            <p style="color:var(--muted);font-size:16px;margin-bottom:32px">Light for daytime. Dark for night. Sepia to
+                eliminate blue light. Your preference is saved automatically.</p>
+            <div class="themes-showcase">
+                <div class="theme-pill light">
+                    <div class="theme-dot" style="background:#F0F0F0;border:1px solid #ccc"></div>
+                    Light Mode
+                </div>
+                <div class="theme-pill dark">
+                    <div class="theme-dot" style="background:#1A1A2E"></div>
+                    Dark Mode
+                </div>
+                <div class="theme-pill sepia">
+                    <div class="theme-dot" style="background:#E8DCC8"></div>
+                    Sepia Mode
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section" id="cta">
+        <div class="cta-glow"></div>
+        <h2 class="reveal">Ready to <em style="font-style:italic;color:var(--violet)">actually</em><br>remember what you
+            read?</h2>
+        <p class="reveal">Paste any text. Choose your voice. Listen, learn, and prove you understand it.</p>
+        <div class="reveal" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;position:relative">
+            <a href="http://localhost:5173" target="_blank" class="btn-primary"
+                style="font-size:18px;padding:18px 48px">▶ Open Alphie</a>
+        </div>
+        <p class="reveal" style="margin-top:24px;font-size:13px;color:var(--muted);margin-bottom:0">No account required.
+            Works in your browser.</p>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+        <div class="footer-logo">
+            <div class="logo-icon"
+                style="width:28px;height:28px;font-size:14px;background:linear-gradient(135deg,var(--violet),var(--cyan));border-radius:6px;display:flex;align-items:center;justify-content:center">
+                📖</div>
+            Alphie
+        </div>
+        <p>Built for learners who want to go deeper.</p>
+        <p style="color:var(--muted)">© 2026 Alphie</p>
+    </footer>
+
+    <script>
+        // SCROLL REVEAL
+        const reveals = document.querySelectorAll('.reveal');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry, i) => {
+                if (entry.isIntersecting) {
+                    setTimeout(() => entry.target.classList.add('visible'), i * 80);
+                }
+            });
+        }, { threshold: 0.1 });
+        reveals.forEach(el => observer.observe(el));
+
+        // DEMO WORD ANIMATION
+        const words = document.querySelectorAll('.demo-word');
+        let currentIdx = 3;
+        let playing = false;
+        let interval;
+
+        function animateWords() {
+            words.forEach((w, i) => {
+                w.classList.remove('active-word', 'past-word');
+                if (i < currentIdx) w.classList.add('past-word');
+                if (i === currentIdx) w.classList.add('active-word');
+            });
+            currentIdx++;
+            if (currentIdx >= words.length) currentIdx = 0;
+        }
+
+        function togglePlay() {
+            playing = !playing;
+            const btn = document.getElementById('play-btn');
+            if (playing) {
+                btn.textContent = '⏸';
+                interval = setInterval(animateWords, 400);
+            } else {
+                btn.textContent = '▶';
+                clearInterval(interval);
+            }
+        }
+
+        // REAL TTS DEMO
+        async function playRealTTS() {
+            const btn = document.getElementById('real-tts-btn');
+            const status = document.getElementById('tts-status');
+            const demoText = "A prerequisite of many attacks is to obtain information about the network and its security controls.";
+
+            btn.textContent = '⏳ Loading...';
+            btn.disabled = true;
+            status.textContent = 'Connecting to AI...';
+
+            try {
+                const response = await fetch('http://localhost:3001/api/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: demoText, voice: 'onyx' })
+                });
+
+                if (!response.ok) throw new Error('Backend not available');
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                status.textContent = '🔊 Playing...';
+                btn.textContent = '🔊 Playing Demo...';
+
+                // Animate words while audio plays
+                let wordIdx = 0;
+                const wordInterval = setInterval(() => {
+                    words.forEach((w, i) => {
+                        w.classList.remove('active-word', 'past-word');
+                        if (i < wordIdx) w.classList.add('past-word');
+                        if (i === wordIdx) w.classList.add('active-word');
+                    });
+                    wordIdx++;
+                    if (wordIdx >= words.length) clearInterval(wordInterval);
+                }, 350);
+
+                audio.play();
+                audio.onended = () => {
+                    btn.textContent = '🔊 Hear Real AI Voice Demo';
+                    btn.disabled = false;
+                    status.textContent = '';
+                    clearInterval(wordInterval);
+                };
+
+            } catch (err) {
+                status.textContent = '⚠️ Start backend first';
+                btn.textContent = '🔊 Hear Real AI Voice Demo';
+                btn.disabled = false;
+                setTimeout(() => status.textContent = '', 3000);
+            }
+        }
+
+        // Auto start demo after 2s
+        setTimeout(() => { togglePlay(); }, 2000);
+    </script>
+</body>
+
+</html>
