@@ -1200,24 +1200,24 @@
             </div>
 
             <div class="reveal">
-                <div class="quiz-mockup">
-                    <div class="q-label">Active Recall Quiz — Question 2 of 5</div>
-                    <div class="q-text">What is the PRIMARY goal of social engineering in cybersecurity attacks?</div>
-                    <div class="quiz-option correct">
+                <div class="quiz-mockup" id="demo-quiz" style="transition:opacity 0.4s">
+                    <div class="q-label" id="dq-label">Active Recall Quiz — Question 1 of 4</div>
+                    <div class="q-text" id="dq-text">What is the PRIMARY goal of social engineering in cybersecurity attacks?</div>
+                    <div class="quiz-option" id="dq-opt-0">
                         <div class="quiz-letter">A</div>
-                        Persuade people into revealing confidential information
+                        <span id="dq-opt-text-0">Persuade people into revealing confidential information</span>
                     </div>
-                    <div class="quiz-option wrong">
+                    <div class="quiz-option" id="dq-opt-1">
                         <div class="quiz-letter">B</div>
-                        Exploit software vulnerabilities directly
+                        <span id="dq-opt-text-1">Exploit software vulnerabilities directly</span>
                     </div>
-                    <div class="quiz-option">
+                    <div class="quiz-option" id="dq-opt-2">
                         <div class="quiz-letter">C</div>
-                        Install malware on target systems
+                        <span id="dq-opt-text-2">Install malware on target systems</span>
                     </div>
-                    <div class="quiz-option">
+                    <div class="quiz-option" id="dq-opt-3">
                         <div class="quiz-letter">D</div>
-                        Intercept network communications
+                        <span id="dq-opt-text-3">Intercept network communications</span>
                     </div>
                 </div>
 
@@ -1434,6 +1434,99 @@
 
         // Auto start demo after 2s
         setTimeout(() => { togglePlay(); }, 2000);
+
+        // DEMO QUIZ CYCLING ANIMATION
+        // Four questions — correct answer at A, B, C, D respectively
+        const demoQuestions = [
+            {
+                text: 'What is the PRIMARY goal of social engineering in cybersecurity attacks?',
+                options: [
+                    'Persuade people into revealing confidential information',
+                    'Exploit software vulnerabilities directly',
+                    'Install malware on target systems',
+                    'Intercept network communications'
+                ],
+                correct: 0, wrong: 2   // A correct; user picks C
+            },
+            {
+                text: 'Which attack intercepts communication between two parties without their knowledge?',
+                options: [
+                    'Phishing',
+                    'Man-in-the-Middle (MitM)',
+                    'SQL Injection',
+                    'Cross-Site Scripting'
+                ],
+                correct: 1, wrong: 3   // B correct; user picks D
+            },
+            {
+                text: 'What type of attack overwhelms a server with traffic to make it unavailable?',
+                options: [
+                    'Brute Force Attack',
+                    'Zero-Day Exploit',
+                    'Distributed Denial of Service',
+                    'Rootkit Installation'
+                ],
+                correct: 2, wrong: 0   // C correct; user picks A
+            },
+            {
+                text: 'What is malware that encrypts files and demands payment for the decryption key?',
+                options: [
+                    'Spyware',
+                    'Adware',
+                    'Rootkit',
+                    'Ransomware'
+                ],
+                correct: 3, wrong: 1   // D correct; user picks B
+            }
+        ];
+
+        let dqCurrentIdx = 0;
+
+        function runDemoQuiz() {
+            const mockup = document.getElementById('demo-quiz');
+            if (!mockup) return;
+            const q = demoQuestions[dqCurrentIdx];
+
+            function setOptionState(wrongIdx, correctIdx) {
+                for (let i = 0; i < 4; i++) {
+                    const opt = document.getElementById('dq-opt-' + i);
+                    if (!opt) return;
+                    opt.className = 'quiz-option';
+                    if (wrongIdx !== -1 && i === wrongIdx) opt.classList.add('wrong');
+                    if (correctIdx !== -1 && i === correctIdx) opt.classList.add('correct');
+                }
+            }
+
+            // Update text content
+            document.getElementById('dq-label').textContent = 'Active Recall Quiz — Question ' + (dqCurrentIdx + 1) + ' of 4';
+            document.getElementById('dq-text').textContent = q.text;
+            for (let i = 0; i < 4; i++) {
+                const el = document.getElementById('dq-opt-text-' + i);
+                if (el) el.textContent = q.options[i];
+            }
+
+            // Phase 0: all neutral (1.8 s)
+            setOptionState(-1, -1);
+            setTimeout(() => {
+                // Phase 1: wrong answer "selected" (1.5 s)
+                setOptionState(q.wrong, -1);
+                setTimeout(() => {
+                    // Phase 2: correct answer revealed (2.5 s)
+                    setOptionState(q.wrong, q.correct);
+                    setTimeout(() => {
+                        // Fade out → advance → fade in
+                        mockup.style.opacity = '0';
+                        setTimeout(() => {
+                            dqCurrentIdx = (dqCurrentIdx + 1) % demoQuestions.length;
+                            runDemoQuiz();
+                            mockup.style.opacity = '1';
+                        }, 400);
+                    }, 2500);
+                }, 1500);
+            }, 1800);
+        }
+
+        setTimeout(runDemoQuiz, 800);
     </script>
 </body>
 

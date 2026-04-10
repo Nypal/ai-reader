@@ -121,9 +121,26 @@ function normalizeQuizData(raw: unknown): QuizData {
         ...(r as object),
         questions: ((r.questions as unknown[]) ?? []).map((q) => {
             const qr = q as Record<string, unknown>;
+            const correctIndexRaw = typeof qr.correct === 'number' ? Number(qr.correct) : (Number(qr.correctAnswerIndex) || 0);
+
+            let options = Array.isArray(qr.options) ? (qr.options as string[]) : [];
+            let correctAnswerIndex = correctIndexRaw;
+
+            if (options.length > 0) {
+                const optionsWithIndex = options.map((opt, i) => ({ text: opt, isCorrect: i === correctIndexRaw }));
+                for (let i = optionsWithIndex.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [optionsWithIndex[i], optionsWithIndex[j]] = [optionsWithIndex[j], optionsWithIndex[i]];
+                }
+                options = optionsWithIndex.map(o => String(o.text));
+                correctAnswerIndex = optionsWithIndex.findIndex(o => o.isCorrect);
+                if (correctAnswerIndex === -1) correctAnswerIndex = 0;
+            }
+
             return {
                 ...qr,
-                correctAnswerIndex: typeof qr.correct === 'number' ? qr.correct : (qr.correctAnswerIndex as number ?? 0),
+                options,
+                correctAnswerIndex,
             } as Question;
         }),
     };
