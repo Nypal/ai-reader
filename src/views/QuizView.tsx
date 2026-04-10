@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { AuditService } from '../services/AuditService';
 import type { PrefetchedQuiz } from '../App';
@@ -23,40 +23,37 @@ interface Question {
 
 interface QuizData {
     questions: Question[];
+    openQuestion?: string;
     summary?: string[];
 }
 
-interface FeynmanFeedback {
-    score: number;
-    strong_points: string;
-    missing_concepts: string;
-    rewrite_suggestion: string;
+interface AnswerResult {
+    understandingScore: number;
+    expressionScore: number;
+    didWell: string;
+    missing: string;
+    improved: string;
 }
 
-type Phase = 'quiz' | 'feynman' | 'results';
-type InputMode = 'type' | 'voice';
-
-// Web Speech API — not in TS default lib, use any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnySpeechRecognition = any;
+type Phase = 'quiz' | 'open' | 'results';
 
 // ── Phase Tracker ──────────────────────────────────────────────
 function PhaseTracker({ phase }: { phase: Phase }) {
     const steps = [
         { id: 'read', label: 'Read' },
         { id: 'quiz', label: 'Quiz' },
-        { id: 'feynman', label: 'Feynman' },
+        { id: 'open', label: 'Open Question' },
     ];
 
     const doneSet: Record<Phase, string[]> = {
         quiz: ['read'],
-        feynman: ['read', 'quiz'],
-        results: ['read', 'quiz', 'feynman'],
+        open: ['read', 'quiz'],
+        results: ['read', 'quiz', 'open'],
     };
 
     const activeMap: Record<Phase, string> = {
         quiz: 'quiz',
-        feynman: 'feynman',
+        open: 'open',
         results: '',
     };
 
@@ -119,6 +116,7 @@ function normalizeQuizData(raw: unknown): QuizData {
     const r = raw as Record<string, unknown>;
     return {
         ...(r as object),
+        openQuestion: typeof r.openQuestion === 'string' ? r.openQuestion : undefined,
         questions: ((r.questions as unknown[]) ?? []).map((q) => {
             const qr = q as Record<string, unknown>;
             const correctIndexRaw = typeof qr.correct === 'number' ? Number(qr.correct) : (Number(qr.correctAnswerIndex) || 0);
@@ -158,16 +156,10 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     const [answered, setAnswered] = useState(false);
     const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
-    // Feynman state
-    const [inputMode, setInputMode] = useState<InputMode>('type');
-    const [feynmanText, setFeynmanText] = useState('');
-    const [voiceLang, setVoiceLang] = useState<'en-US' | 'fr-FR'>('en-US');
-    const [isRecording, setIsRecording] = useState(false);
-    const [finalTranscript, setFinalTranscript] = useState('');
-    const [interimTranscript, setInterimTranscript] = useState('');
-    const [feynmanLoading, setFeynmanLoading] = useState(false);
-    const [feynmanFeedback, setFeynmanFeedback] = useState<FeynmanFeedback | null>(null);
-    const recognitionRef = useRef<AnySpeechRecognition | null>(null);
+    // Open question state
+    const [userAnswer, setUserAnswer] = useState('');
+    const [answerLoading, setAnswerLoading] = useState(false);
+    const [answerResult, setAnswerResult] = useState<AnswerResult | null>(null);
 
     // Results state
     const [masteryScore, setMasteryScore] = useState(0);
@@ -175,10 +167,8 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
 
     // Load quiz — use prefetched result when available, otherwise fetch now.
     useEffect(() => {
-        // Still in flight — stay in loading state until the prefetch resolves.
         if (prefetchedQuiz?.loading) return;
 
-        // Prefetch completed with data — use it immediately, no extra round-trip.
         if (prefetchedQuiz?.data) {
             const data = normalizeQuizData(prefetchedQuiz.data);
             setQuizData(data);
@@ -187,14 +177,12 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
             return;
         }
 
-        // Prefetch failed — surface the error.
         if (prefetchedQuiz?.error) {
             setError(prefetchedQuiz.error);
             setLoading(false);
             return;
         }
 
-        // No prefetch available (e.g. direct navigation) — fetch now.
         const fetchQuiz = async () => {
             try {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
@@ -238,133 +226,45 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
             setAnswered(false);
             setSelectedIdx(null);
         } else {
-            setPhase('feynman');
+            setPhase('open');
         }
     };
 
-    // ── Voice logic ──────────────────────────────────────────────
+    // ── Open Question Submit ─────────────────────────────────────
 
-    const stopRecording = useCallback(() => {
-        setIsRecording(false);
-        setInterimTranscript('');
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-            recognitionRef.current = null;
-        }
-    }, []);
-
-    const startRecording = useCallback(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const w = window as any;
-        const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-        if (!SR) {
-            alert('Voice dictation requires Chrome or Edge. Please switch or use Type mode.');
-            return;
-        }
-        const rec = new SR();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = voiceLang;
-
-        rec.onstart = () => setIsRecording(true);
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rec.onresult = (e: any) => {
-            let interim = '';
-            let newFinal = '';
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-                const t = e.results[i][0].transcript;
-                if (e.results[i].isFinal) newFinal += t + ' ';
-                else interim += t;
-            }
-            if (newFinal) setFinalTranscript(prev => prev + newFinal);
-            setInterimTranscript(interim);
-        };
-
-        rec.onerror = () => stopRecording();
-
-        rec.onend = () => {
-            if (recognitionRef.current) {
-                try { recognitionRef.current.start(); } catch { /* ignore */ }
-            }
-        };
-
-        recognitionRef.current = rec;
-        rec.start();
-    }, [voiceLang, stopRecording]);
-
-    const toggleRecording = () => {
-        if (isRecording) stopRecording();
-        else startRecording();
-    };
-
-    // If voice lang changes while recording — restart
-    useEffect(() => {
-        if (isRecording) {
-            stopRecording();
-            setTimeout(startRecording, 300);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [voiceLang]);
-
-    const clearTranscript = () => {
-        setFinalTranscript('');
-        setInterimTranscript('');
-    };
-
-    const editTranscript = () => {
-        setFeynmanText(finalTranscript.trim());
-        setInputMode('type');
-    };
-
-    const getFeynmanWordCount = () => {
-        const src = inputMode === 'voice' ? finalTranscript : feynmanText;
-        return src.trim() ? src.trim().split(/\s+/).filter(Boolean).length : 0;
-    };
-
-    const isFeynmanReady = getFeynmanWordCount() >= 15;
-
-    // ── Feynman Submit ───────────────────────────────────────────
-
-    const handleFeynmanSubmit = async () => {
-        const text = inputMode === 'voice' ? finalTranscript.trim() : feynmanText.trim();
-        if (!text) return;
-        if (isRecording) stopRecording();
-
-        setFeynmanLoading(true);
+    const handleAnswerSubmit = async () => {
+        if (!userAnswer.trim() || !quizData?.openQuestion) return;
+        setAnswerLoading(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/feynman`, {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/evaluate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ explanation: text, originalText: content }),
+                body: JSON.stringify({
+                    question: quizData.openQuestion,
+                    answer: userAnswer.trim(),
+                    originalText: content,
+                }),
             });
-            if (!res.ok) throw new Error('Failed to evaluate explanation.');
-            const data: Record<string, string | number> = await res.json();
-            const finalScore = Number(data.score) || 65;
-            AuditService.logFeynmanResult(finalScore);
-            setFeynmanFeedback({
-                score: finalScore,
-                strong_points: String(data.strong_points || 'Good attempt.'),
-                missing_concepts: String(data.missing_concepts || 'Continue to refine your points.'),
-                rewrite_suggestion: String(data.rewrite_suggestion || 'Review your concepts for clarity.'),
+            if (!res.ok) throw new Error('Failed to evaluate answer.');
+            const data = await res.json();
+            setAnswerResult({
+                understandingScore: Number(data.understandingScore ?? 5),
+                expressionScore: Number(data.expressionScore ?? 5),
+                didWell: String(data.didWell ?? ''),
+                missing: String(data.missing ?? ''),
+                improved: String(data.improved ?? ''),
             });
         } catch {
-            setFeynmanFeedback({
-                score: 65,
-                strong_points: 'You captured the core idea and explained it with clarity.',
-                missing_concepts: 'Try to include specific examples or context from the text to deepen your explanation.',
-                rewrite_suggestion: 'Add a concrete detail: who benefits, by how much, or why it matters.',
+            setAnswerResult({
+                understandingScore: 0,
+                expressionScore: 0,
+                didWell: '',
+                missing: '',
+                improved: 'Unable to evaluate — please check your connection.',
             });
         } finally {
-            setFeynmanLoading(false);
+            setAnswerLoading(false);
         }
-    };
-
-    const retryFeynman = () => {
-        setFeynmanFeedback(null);
-        setFeynmanText('');
-        setFinalTranscript('');
-        setInterimTranscript('');
     };
 
     // ── Results ──────────────────────────────────────────────────
@@ -372,8 +272,8 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     const goToResults = () => {
         if (!quizData) return;
         const qScore = Math.round((qResults.filter(Boolean).length / quizData.questions.length) * 100);
-        const fScore = feynmanFeedback?.score ?? 65;
-        const mastery = Math.round(qScore * 0.5 + fScore * 0.5);
+        const understandingBonus = answerResult ? Math.round((answerResult.understandingScore / 10) * 20) : 0;
+        const mastery = Math.min(100, Math.round(qScore * 0.8 + understandingBonus));
         setMasteryScore(mastery);
         setPhase('results');
         setTimeout(() => setRetentionPct(mastery), 300);
@@ -489,7 +389,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
 
                     {answered && (
                         <button className="qz-btn-primary" onClick={handleNext}>
-                            {currentIdx < questions.length - 1 ? 'Next Question →' : 'Start Feynman Test →'}
+                            {currentIdx < questions.length - 1 ? 'Next Question →' : 'Open Question →'}
                         </button>
                     )}
                 </div>
@@ -501,174 +401,98 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
         );
     }
 
-    // ── FEYNMAN PHASE ────────────────────────────────────────────
-    if (phase === 'feynman') {
-        const wordCount = getFeynmanWordCount();
-        const voiceWordCount = finalTranscript.trim().split(/\s+/).filter(Boolean).length;
+    // ── OPEN QUESTION PHASE ──────────────────────────────────────
+    if (phase === 'open') {
+        const openQuestion = quizData.openQuestion ?? 'In your own words, what is the main idea of this text?';
 
         return (
             <div className="qz-page">
                 <div className="qz-logo">
                     <div className="qz-logo-mark">✦</div>
                     <span className="qz-logo-name">Alphie</span>
-                    <span className="qz-logo-sub">Feynman Test — Step 3 of 3</span>
+                    <span className="qz-logo-sub">Open Question — Step 3 of 3</span>
                 </div>
 
-                <PhaseTracker phase="feynman" />
+                <PhaseTracker phase="open" />
 
                 <div className="qz-card">
-                    <div className="qz-card-title">The Feynman Test</div>
-                    <div className="qz-card-sub">
-                        Pretend you're explaining this to a curious friend who has never read it.
-                        Use your own words — no jargon, no copying. If you can explain it simply, you truly understand it.
-                    </div>
+                    <div className="qz-card-title">Open Question</div>
+                    <div className="q-text" style={{ marginTop: '12px' }}>{openQuestion}</div>
 
-                    {!feynmanFeedback && (
-                        <div id="feynman-input-section">
-                            {/* Mode toggle */}
-                            <div className="input-mode-toggle">
-                                <button
-                                    className={`im-btn ${inputMode === 'type' ? 'active' : ''}`}
-                                    onClick={() => { if (isRecording) stopRecording(); setInputMode('type'); }}
-                                >
-                                    ✏️ Type
-                                </button>
-                                <button
-                                    className={`im-btn ${inputMode === 'voice' ? 'active' : ''}`}
-                                    onClick={() => setInputMode('voice')}
-                                >
-                                    🎙 Speak
-                                </button>
-                            </div>
-
-                            {/* Type mode */}
-                            {inputMode === 'type' && (
-                                <div>
-                                    <textarea
-                                        className="feynman-area"
-                                        placeholder="Explain the main ideas as if you're teaching someone from scratch…"
-                                        value={feynmanText}
-                                        onChange={(e) => setFeynmanText(e.target.value)}
-                                    />
-                                    <div className="qz-wc-row">
-                                        <span className="qz-wc-label">{wordCount} words</span>
-                                        <span className="qz-wc-label">Aim for at least 30 words</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Voice mode */}
-                            {inputMode === 'voice' && (
-                                <div className="voice-recorder">
-                                    {/* Language selector */}
-                                    <div className="voice-lang-header">
-                                        <div className="voice-lang-label">Speaking language</div>
-                                        <div className="voice-lang">
-                                            <button
-                                                className={`vl-btn ${voiceLang === 'en-US' ? 'active' : ''}`}
-                                                onClick={() => setVoiceLang('en-US')}
-                                            >
-                                                🇬🇧 English
-                                            </button>
-                                            <button
-                                                className={`vl-btn ${voiceLang === 'fr-FR' ? 'active' : ''}`}
-                                                onClick={() => setVoiceLang('fr-FR')}
-                                            >
-                                                🇫🇷 Français
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Mic button */}
-                                    <div className="mic-wrap">
-                                        <button
-                                            className={`mic-btn ${isRecording ? 'recording' : ''}`}
-                                            onClick={toggleRecording}
-                                            aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-                                        >
-                                            {isRecording ? '⏹' : '🎙'}
-                                            {isRecording && (
-                                                <>
-                                                    <div className="mic-ring"></div>
-                                                    <div className="mic-ring mic-ring-2"></div>
-                                                    <div className="mic-ring mic-ring-3"></div>
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-
-                                    <div className={`mic-status ${isRecording ? 'active-s' : ''}`}>
-                                        {isRecording ? 'Listening… speak naturally' : finalTranscript ? 'Recording stopped — ready to evaluate' : 'Tap to start speaking'}
-                                    </div>
-
-                                    {/* Live transcript */}
-                                    <div className={`live-transcript ${isRecording ? 'listening' : ''}`}>
-                                        {!finalTranscript && !interimTranscript && (
-                                            <span className="transcript-placeholder">Your words will appear here as you speak…</span>
-                                        )}
-                                        <span>{finalTranscript}</span>
-                                        <span className="live-interim">{interimTranscript}</span>
-                                    </div>
-
-                                    {/* Voice actions */}
-                                    {finalTranscript && !isRecording && (
-                                        <div className="voice-actions">
-                                            <button className="qz-btn-secondary voice-action-btn" onClick={clearTranscript}>🗑 Clear</button>
-                                            <button className="qz-btn-secondary voice-action-btn" onClick={editTranscript}>✏️ Edit text</button>
-                                        </div>
-                                    )}
-
-                                    <div className="qz-wc-row">
-                                        <span className="qz-wc-label">{voiceWordCount} words recorded</span>
-                                        <span className="qz-wc-label">Works best in Chrome</span>
-                                    </div>
-                                </div>
-                            )}
-
+                    {!answerResult && (
+                        <>
+                            <textarea
+                                className="feynman-area"
+                                placeholder="Type your answer here…"
+                                value={userAnswer}
+                                onChange={(e) => setUserAnswer(e.target.value)}
+                                disabled={answerLoading}
+                            />
                             <button
                                 className="qz-btn-primary"
-                                onClick={handleFeynmanSubmit}
-                                disabled={!isFeynmanReady || feynmanLoading}
+                                onClick={handleAnswerSubmit}
+                                disabled={!userAnswer.trim() || answerLoading}
                             >
-                                Evaluate My Understanding →
+                                {answerLoading ? 'Evaluating…' : 'Submit Answer →'}
                             </button>
-                        </div>
+                        </>
                     )}
 
-                    {/* Loading */}
-                    {feynmanLoading && <LoadingDots label="Analysing your explanation…" />}
+                    {answerLoading && <LoadingDots label="Checking your answer…" />}
 
-                    {/* Feedback */}
-                    {feynmanFeedback && !feynmanLoading && (
+                    {answerResult && !answerLoading && (
                         <div>
-                            <div className="qz-divider" />
-                            <div className="qz-feedback-label">Alphie's Feedback</div>
-                            <div className="feynman-sections">
-                                <div className="f-section strong">
-                                    <div className="f-head">✅ Strong Points</div>
-                                    {feynmanFeedback.strong_points}
+                            <div className="qz-divider" style={{ margin: '20px 0 16px' }} />
+
+                            {/* Scores */}
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                                <div className="explanation-box correct" style={{ flex: 1, textAlign: 'center', padding: '12px 8px' }}>
+                                    <div style={{ fontSize: '22px', fontWeight: 700, lineHeight: 1 }}>{answerResult.understandingScore}<span style={{ fontSize: '13px', fontWeight: 400 }}>/10</span></div>
+                                    <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8 }}>Understanding</div>
                                 </div>
-                                <div className="f-section missing">
-                                    <div className="f-head">💡 What to Add</div>
-                                    {feynmanFeedback.missing_concepts}
-                                </div>
-                                <div className="f-section rewrite">
-                                    <div className="f-head">✏️ Try This Phrasing</div>
-                                    {feynmanFeedback.rewrite_suggestion}
+                                <div className="explanation-box correct" style={{ flex: 1, textAlign: 'center', padding: '12px 8px' }}>
+                                    <div style={{ fontSize: '22px', fontWeight: 700, lineHeight: 1 }}>{answerResult.expressionScore}<span style={{ fontSize: '13px', fontWeight: 400 }}>/10</span></div>
+                                    <div style={{ fontSize: '11px', marginTop: '4px', opacity: 0.8 }}>Expression</div>
                                 </div>
                             </div>
+
+                            {/* Feedback bullets */}
+                            <div className="feynman-sections">
+                                {answerResult.didWell && (
+                                    <div className="f-section strong">
+                                        <div className="f-head">👍 What you did well</div>
+                                        {answerResult.didWell}
+                                    </div>
+                                )}
+                                {answerResult.missing && (
+                                    <div className="f-section missing">
+                                        <div className="f-head">⚠️ What to improve</div>
+                                        {answerResult.missing}
+                                    </div>
+                                )}
+                                {answerResult.improved && (
+                                    <div className="f-section rewrite">
+                                        <div className="f-head">✨ Improved version</div>
+                                        {answerResult.improved}
+                                    </div>
+                                )}
+                            </div>
+
                             <button className="qz-btn-primary" onClick={goToResults}>
-                                See Full Results →
+                                See Results →
                             </button>
-                            <button className="qz-btn-secondary" onClick={retryFeynman}>
-                                ✏️ Rewrite my explanation
+                            <button className="qz-btn-secondary" onClick={() => {
+                                setAnswerResult(null);
+                                setUserAnswer('');
+                            }}>
+                                ✏️ Rewrite &amp; try again
                             </button>
                         </div>
                     )}
                 </div>
 
-                <ScienceTip icon="🔬">
-                    <strong style={{ color: 'var(--accent)' }}>The Feynman Technique:</strong> Physicist Richard Feynman learned anything by explaining it simply. The moment you struggle to explain it, you find your gap. That gap IS the learning.
+                <ScienceTip icon="✍️">
+                    <strong style={{ color: 'var(--accent)' }}>Why open questions?</strong> Writing your answer in your own words forces active retrieval — stronger than recognition alone.
                 </ScienceTip>
             </div>
         );
@@ -745,9 +569,8 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                     setQResults(new Array(questions.length).fill(null));
                     setAnswered(false);
                     setSelectedIdx(null);
-                    setFeynmanFeedback(null);
-                    setFeynmanText('');
-                    setFinalTranscript('');
+                    setAnswerResult(null);
+                    setUserAnswer('');
                 }}>
                     🔁 Try Again — Same Text
                 </button>

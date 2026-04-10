@@ -293,8 +293,14 @@ const generateQuiz = async (req, res) => {
 
         console.log(`[Quiz] Generating questions for text (${text.length} chars) in lang: ${lang}...`);
 
-        const systemPrompt = `Generate exactly 4 multiple choice questions based SOLELY on the user text. Output valid JSON only.
-Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","reference":"..."}]}`;
+        const systemPrompt = `Generate exactly 4 multiple choice questions AND 1 open question based SOLELY on the user text. Output valid JSON only.
+
+CRITICAL RULES for MCQ:
+- The "correct" field is a 0-based index into the "options" array.
+- Spread the correct index across 0 (A), 1 (B), 2 (C), and 3 (D) — do NOT place the correct answer at the same index for every question.
+- All 4 options must be plausible.
+
+Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["option_A","option_B","option_C","option_D"],"correct":2,"explanation":"...","reference":"..."}],"openQuestion":"A single open-ended question that requires a short written answer to test understanding of a key idea in the text."}`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -322,32 +328,41 @@ Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":[".
 app.post('/api/quiz', aiLimiter, generateQuiz);
 app.post('/api/questions', aiLimiter, generateQuiz);
 
-app.post('/api/feynman', aiLimiter, async (req, res) => {
+app.post('/api/evaluate', aiLimiter, async (req, res) => {
     try {
-        const { explanation, originalText } = req.body;
-        if (!originalText || !explanation) return res.status(400).json({ error: 'originalText and explanation are required' });
+        const { question, answer, originalText } = req.body;
+        if (!question || !answer || !originalText) return res.status(400).json({ error: 'question, answer, and originalText are required' });
         if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
 
-        console.log(`[Feynman] Evaluating explanation...`);
+        console.log(`[Evaluate] Checking answer...`);
 
-        const systemPrompt = `You are an expert educator acting as a supportive coach for a student taking a Feynman Test.
-Evaluate how accurately and completely the student explained the main ideas of the original text. Maintain an encouraging tone.
-You MUST return the output ONLY as valid JSON matching this exact structure, with these EXACT keys:
+        const systemPrompt = `You are a supportive learning coach evaluating a student's written answer to an open question about a text they read.
+
+Evaluate semantically — based on meaning, not exact wording. Accept imperfect or broken English if the core idea is present.
+Always return useful, encouraging feedback even for weak or incomplete answers.
+Keep all feedback short, simple, and easy to understand for non-native English speakers.
+
+Return valid JSON with EXACTLY this structure:
 {
-  "strong_points": "List specific things the student explained correctly.",
-  "missing_concepts": "List specific concepts they missed that they should add next time.",
-  "rewrite_suggestion": "Provide one concrete example sentence the student could use to improve their explanation.",
-  "score": 85
-}`;
+  "understandingScore": 7,
+  "expressionScore": 6,
+  "didWell": "One short sentence about what the student got right.",
+  "missing": "One short sentence about what is missing, unclear, or could be improved in terms of content.",
+  "improved": "A rewritten version of the student's answer in clear, natural, correct English — same meaning, better form."
+}
+
+Scoring rules:
+- understandingScore (0-10): how well the student grasped the core idea, based on the original text
+- expressionScore (0-10): grammar, clarity, sentence structure, and overall written English quality`;
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            max_tokens: 1000,
-            temperature: 0.7,
+            max_tokens: 400,
+            temperature: 0.4,
             response_format: { type: "json_object" },
             messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: `Original Text: ${originalText}\n\nStudent's Explanation: ${explanation}\n\nPlease evaluate.` }
+                { role: "user", content: `Original Text:\n${originalText}\n\nQuestion: ${question}\n\nStudent's Answer: ${answer}` }
             ]
         });
 
@@ -358,8 +373,8 @@ You MUST return the output ONLY as valid JSON matching this exact structure, wit
 
         res.json(JSON.parse(content));
     } catch (error) {
-        console.error('Feynman Evaluation Error:', error);
-        res.status(500).json({ error: 'Failed to evaluate explanation' });
+        console.error('Evaluate Error:', error);
+        res.status(500).json({ error: 'Failed to evaluate answer' });
     }
 });
 

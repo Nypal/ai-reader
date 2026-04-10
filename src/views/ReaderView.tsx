@@ -417,7 +417,10 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         safeRevoke(currentObjectUrlRef.current);
         currentObjectUrlRef.current = audioUrlToPlay;
         a.src = currentObjectUrlRef.current;
-        a.load();
+        // Don't call a.load() — assigning .src triggers auto-load per the HTML spec.
+        // An explicit load() starts the decoder immediately, causing a race where the
+        // playback position advances past 0 before a.play() is called, clipping the
+        // first words of the sentence.
 
         if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
 
@@ -466,11 +469,15 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         };
 
         try {
-            setCurrentSentenceIdx(idx);
-            setSentenceProgress(0);
             a.currentTime = 0;
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;
+            // Audio is now confirmed playing — update the visual highlight here, not before
+            // a.play(), so the sentence highlight and word progress appear in sync with
+            // what the listener actually hears.
+            if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+            setCurrentSentenceIdx(idx);
+            setSentenceProgress(0);
             console.log(`[PlayLearn] play started idx=${idx} ttfs_ms=${Math.round(nowMs() - t0)}ms`);
 
             // N is now playing — kick off lookahead prefetches so N+1 is ready before N ends.
