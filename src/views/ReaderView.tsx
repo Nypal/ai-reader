@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, SkipBack, SkipForward, Play, Pause } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
 import { AuditService } from '../services/AuditService';
@@ -13,6 +13,119 @@ interface ReaderViewProps {
     prewarmBlob?: { blob: Blob; voice: string; lang: string } | null;
     /** Ref to the in-flight prewarm Promise (may still be pending when ReaderView mounts) */
     prewarmPromiseRef?: React.RefObject<Promise<{ blob: Blob; voice: string; lang: string }> | null>;
+    /** Original PDF file — when present, enables split-screen PDF viewer */
+    pdfFile?: File | null;
+    /** Extracted text per page — used to map sentences to PDF pages */
+    pdfPageTexts?: string[] | null;
+}
+
+// ── PDF Panel ────────────────────────────────────────────────────
+interface PdfPanelProps {
+    pdfFile: File;
+    currentPage: number; // 0-indexed
+}
+
+function PdfPanel({ pdfFile, currentPage }: PdfPanelProps) {
+    const [numPages, setNumPages] = useState(0);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const pageContainerRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdfDocRef = useRef<any>(null);
+
+    // Phase 1: load PDF document and get page count
+    useEffect(() => {
+        let cancelled = false;
+        const blobUrl = URL.createObjectURL(pdfFile);
+
+        const load = async () => {
+            try {
+                const pdfjsLib = await import('pdfjs-dist');
+                const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min?url');
+                pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+                const pdf = await pdfjsLib.getDocument({ url: blobUrl }).promise;
+                if (cancelled) return;
+                pdfDocRef.current = pdf;
+                setNumPages(pdf.numPages);
+            } catch (e) {
+                console.error('[PdfPanel] load error', e);
+            } finally {
+                URL.revokeObjectURL(blobUrl);
+            }
+        };
+
+        load();
+        return () => { cancelled = true; };
+    }, [pdfFile]);
+
+    // Phase 2: render pages to canvases after numPages is set (canvases exist in DOM)
+    useEffect(() => {
+        if (!pdfDocRef.current || numPages === 0) return;
+        let cancelled = false;
+
+        const renderAll = async () => {
+            const pdf = pdfDocRef.current;
+            const paneWidth = containerRef.current ? containerRef.current.clientWidth - 32 : 600;
+
+            for (let i = 1; i <= numPages; i++) {
+                if (cancelled) break;
+                try {
+                    const page = await pdf.getPage(i);
+                    if (cancelled) break;
+                    const canvas = canvasRefs.current[i - 1];
+                    if (!canvas) continue;
+
+                    const unscaled = page.getViewport({ scale: 1 });
+                    const scale = Math.max(0.5, paneWidth / unscaled.width);
+                    const vp = page.getViewport({ scale });
+
+                    canvas.width = vp.width;
+                    canvas.height = vp.height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) continue;
+                    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                } catch (e) {
+                    console.debug('[PdfPanel] render error page', i, e);
+                }
+            }
+        };
+
+        renderAll();
+        return () => { cancelled = true; };
+    }, [numPages]);
+
+    // Auto-scroll to current page
+    useEffect(() => {
+        const el = pageContainerRefs.current[currentPage];
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, [currentPage]);
+
+    if (numPages === 0) {
+        return (
+            <div className="pdf-loading">
+                <div className="pdf-loading-spinner" />
+                <span>Loading PDF…</span>
+            </div>
+        );
+    }
+
+    return (
+        <div ref={containerRef} className="pdf-pages-container">
+            {Array.from({ length: numPages }, (_, i) => (
+                <div
+                    key={i}
+                    ref={el => { pageContainerRefs.current[i] = el; }}
+                    className={`pdf-page-wrapper ${i === currentPage ? 'pdf-page-current' : ''}`}
+                >
+                    <div className="pdf-page-label">Page {i + 1}</div>
+                    <canvas
+                        ref={el => { canvasRefs.current[i] = el; }}
+                        className="pdf-page-canvas"
+                    />
+                </div>
+            ))}
+        </div>
+    );
 }
 
 type CacheItem = {
@@ -61,7 +174,7 @@ function estimateSyllables(word: string): number {
     return Math.max(1, count);
 }
 
-export default function ReaderView({ content, readingLanguage, onFinish, onBack, prewarmBlob, prewarmPromiseRef }: ReaderViewProps) {
+export default function ReaderView({ content, readingLanguage, onFinish, onBack, prewarmBlob, prewarmPromiseRef, pdfFile, pdfPageTexts }: ReaderViewProps) {
     // Capture prewarm in a ref so playIndex can read the latest value without stale closure
     const prewarmRef = useRef(prewarmBlob ?? null);
     // Keep ref in sync if the blob resolves after mount (React state update)
@@ -106,6 +219,28 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
 
     const cacheRef = useRef<Map<number, CacheItem>>(new Map());
     const sentenceRefs = useRef<(HTMLSpanElement | null)[]>([]);
+
+    // ── PDF split-screen ─────────────────────────────────────────
+    const hasPdf = !!pdfFile;
+    const [showPdf, setShowPdf] = useState(true); // mobile toggle
+
+    // Map each sentence to a 0-indexed PDF page using cumulative char offsets
+    const sentencePageMap = useMemo<number[]>(() => {
+        if (!pdfPageTexts || pdfPageTexts.length === 0) return sentences.map(() => 0);
+        let offset = 0;
+        const pageEndOffsets = pdfPageTexts.map(pt => { offset += pt.length + 2; return offset; });
+        let searchPos = 0;
+        return sentences.map(sentence => {
+            const probe = sentence.trim().substring(0, 50);
+            const found = content.indexOf(probe, Math.max(0, searchPos - 200));
+            const charPos = found !== -1 ? found : searchPos;
+            if (found !== -1) searchPos = found + probe.length;
+            const pageIdx = pageEndOffsets.findIndex(end => charPos < end);
+            return Math.max(0, pageIdx === -1 ? pdfPageTexts.length - 1 : pageIdx);
+        });
+    }, [sentences, pdfPageTexts, content]);
+
+    const currentPage = currentSentenceIdx >= 0 ? (sentencePageMap[currentSentenceIdx] ?? 0) : 0;
 
     const handleVoiceChange = (newVoice: TTSVoice) => {
         if (newVoice === voiceUI) return;
@@ -638,183 +773,161 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         ? (Math.max(0, currentSentenceIdx) / (sentences.length - 1)) * 100
         : 0;
 
+    // ── Shared UI fragments ───────────────────────────────────────
+    const progressBar = (
+        <div className="reader-progress-bar">
+            <div
+                className="reader-progress-fill"
+                style={{ '--reader-progress-width': `${overallProgressPct}%` } as React.CSSProperties}
+            />
+        </div>
+    );
+
+    const topBar = (
+        <nav className={`reader-topbar ${isScrolled ? 'scrolled' : ''}`}>
+            <button className="reader-back-btn" onClick={handleBack}>
+                <ArrowLeft size={16} /> Back to Start
+            </button>
+            <div className="reader-topbar-right">
+                {hasPdf && (
+                    <button
+                        className={`pdf-toggle-btn ${showPdf ? 'active' : ''}`}
+                        onClick={() => setShowPdf(v => !v)}
+                        aria-label="Toggle PDF view"
+                        title={showPdf ? 'Hide PDF' : 'Show PDF'}
+                    >
+                        📄 {showPdf ? 'Hide PDF' : 'Show PDF'}
+                    </button>
+                )}
+                <div className="theme-dots">
+                    <div className={`tdot tdot-night ${theme === 'night' ? 'active' : ''}`} onClick={() => handleSetTheme('night')} data-tip="Night" />
+                    <div className={`tdot tdot-light ${theme === 'light' ? 'active' : ''}`} onClick={() => handleSetTheme('light')} data-tip="Light" />
+                    <div className={`tdot tdot-sepia ${theme === 'sepia' ? 'active' : ''}`} onClick={() => handleSetTheme('sepia')} data-tip="Sepia" />
+                    <div className={`tdot tdot-forest ${theme === 'forest' ? 'active' : ''}`} onClick={() => handleSetTheme('forest')} data-tip="Forest" />
+                </div>
+            </div>
+        </nav>
+    );
+
+    const sentencesPanel = (
+        <div className="reader-content" data-has-active={currentSentenceIdx >= 0}>
+            <div className="sentences-container">
+                {sentences.map((sentence, idx) => {
+                    const isHighlighted = idx === currentSentenceIdx;
+                    const words = sentence.split(/(\s+)/);
+                    const wordTokens = words.filter(w => w.trim().length > 0);
+                    const totalSyllables = wordTokens.reduce((sum, w) => sum + estimateSyllables(w), 0) || 1;
+
+                    let cumSyllables = 0;
+                    const wordThresholds = wordTokens.map(w => {
+                        cumSyllables += estimateSyllables(w);
+                        return cumSyllables / totalSyllables;
+                    });
+
+                    let activeWordIdx = -1;
+                    if (isHighlighted) {
+                        const found = wordThresholds.findIndex(t => t > sentenceProgress);
+                        activeWordIdx = found === -1 ? wordTokens.length - 1 : found;
+                    }
+                    let currentWordCount = 0;
+
+                    const wordElements = words.map((chunk, chunkIdx) => {
+                        if (chunk.trim().length === 0) return <span key={chunkIdx}>{chunk}</span>;
+                        const isWordActive = isHighlighted && currentWordCount === activeWordIdx;
+                        const isWordPast = (isHighlighted && currentWordCount < activeWordIdx) || (idx < currentSentenceIdx);
+                        let wordClass = 'word';
+                        if (isWordActive) wordClass += ' current';
+                        else if (isWordPast) wordClass += ' spoken';
+                        currentWordCount++;
+                        return <span key={chunkIdx} className={wordClass}>{chunk}</span>;
+                    });
+
+                    return (
+                        <div
+                            key={idx}
+                            ref={(el) => { sentenceRefs.current[idx] = el; }}
+                            className={`sentence ${isHighlighted ? 'active' : ''}`}
+                            onClick={() => handleSeek(idx)}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Play sentence ${idx + 1}`}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSeek(idx); }
+                            }}
+                        >
+                            {wordElements}
+                        </div>
+                    );
+                })}
+            </div>
+            {lastError && <div className="reader-error">Error: {lastError}</div>}
+        </div>
+    );
+
+    const playerBar = (
+        <div className="player">
+            <button className="p-btn" onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))} disabled={currentSentenceIdx <= 0} aria-label="Previous sentence">
+                <SkipBack size={16} />
+            </button>
+            <button className="p-play" onClick={togglePlay} aria-label="Play or Pause">
+                {playbackState === 'playing' ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="play-icon-offset" />}
+            </button>
+            <button className="p-btn" onClick={() => handleSeek(Math.min(sentences.length - 1, currentSentenceIdx + 1))} disabled={currentSentenceIdx >= sentences.length - 1} aria-label="Next sentence">
+                <SkipForward size={16} />
+            </button>
+            <div className="p-divider" />
+            <div className="p-speed" onClick={handleSpeedToggle} aria-label="Toggle Speed">{speed}×</div>
+            <div className="p-divider" />
+            <div className="p-voice" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
+                <div className={`p-wave ${playbackState === 'playing' ? 'playing' : ''}`}>
+                    <div className="pw" /><div className="pw" /><div className="pw" /><div className="pw" />
+                </div>
+                {voiceUI}
+                <div className={`p-voice-dropdown ${isDropdownOpen ? 'open' : ''}`}>
+                    {(['onyx', 'echo', 'fable', 'nova', 'shimmer', 'alloy'] as TTSVoice[]).map(v => (
+                        <div key={v} className={`p-vopt ${voiceUI === v ? 'sel' : ''}`} onClick={(e) => { e.stopPropagation(); handleVoiceChange(v); setIsDropdownOpen(false); }}>
+                            {v}
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div className="p-divider p-divider--mr" />
+            <div className="p-progress" onClick={handleSeekClick}>
+                <div className="p-fill" style={{ '--p-fill-width': `${overallProgressPct}%` } as React.CSSProperties} />
+            </div>
+        </div>
+    );
+
+    // ── SPLIT LAYOUT (PDF present) ────────────────────────────────
+    if (hasPdf) {
+        return (
+            <div className="reader-page reader-page--split">
+                <div className="ambient"><div className="glow-1" /><div className="glow-2" /></div>
+                {progressBar}
+                {topBar}
+                <div className="reader-split-body">
+                    {/* PDF pane */}
+                    <div className={`pdf-pane ${showPdf ? 'pdf-pane--visible' : 'pdf-pane--hidden'}`}>
+                        <PdfPanel pdfFile={pdfFile!} currentPage={currentPage} />
+                    </div>
+                    {/* Text + player pane */}
+                    <div className="reader-text-pane">
+                        {sentencesPanel}
+                        {playerBar}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ── STANDARD LAYOUT (no PDF) ──────────────────────────────────
     return (
         <div className="reader-page">
-            <div className="ambient">
-                <div className="glow-1"></div>
-                <div className="glow-2"></div>
-            </div>
-
-            {/* PROGRESS LINE */}
-            <div className="reader-progress-bar">
-                <div
-                    className="reader-progress-fill"
-                    style={{ '--reader-progress-width': `${overallProgressPct}%` } as React.CSSProperties}
-                />
-            </div>
-
-            {/* TOP BAR */}
-            <nav className={`reader-topbar ${isScrolled ? 'scrolled' : ''}`}>
-                <button className="reader-back-btn" onClick={handleBack}>
-                    <ArrowLeft size={16} /> Back to Start
-                </button>
-                <div className="reader-topbar-right">
-                    <div className="theme-dots">
-                        <div
-                            className={`tdot tdot-night ${theme === 'night' ? 'active' : ''}`}
-                            onClick={() => handleSetTheme('night')}
-                            data-tip="Night"
-                        />
-                        <div
-                            className={`tdot tdot-light ${theme === 'light' ? 'active' : ''}`}
-                            onClick={() => handleSetTheme('light')}
-                            data-tip="Light"
-                        />
-                        <div
-                            className={`tdot tdot-sepia ${theme === 'sepia' ? 'active' : ''}`}
-                            onClick={() => handleSetTheme('sepia')}
-                            data-tip="Sepia"
-                        />
-                        <div
-                            className={`tdot tdot-forest ${theme === 'forest' ? 'active' : ''}`}
-                            onClick={() => handleSetTheme('forest')}
-                            data-tip="Forest"
-                        />
-                    </div>
-                </div>
-            </nav>
-
-            {/* CONTENT */}
-            <div className="reader-content" data-has-active={currentSentenceIdx >= 0}>
-                <div className="sentences-container">
-                    {sentences.map((sentence, idx) => {
-                        const isHighlighted = idx === currentSentenceIdx;
-                        const words = sentence.split(/(\s+)/);
-                        const wordTokens = words.filter(w => w.trim().length > 0);
-                        const totalSyllables = wordTokens.reduce((sum, w) => sum + estimateSyllables(w), 0) || 1;
-
-                        // Build cumulative syllable-proportion thresholds — words with more syllables get more time
-                        let cumSyllables = 0;
-                        const wordThresholds = wordTokens.map(w => {
-                            cumSyllables += estimateSyllables(w);
-                            return cumSyllables / totalSyllables;
-                        });
-
-                        let activeWordIdx = -1;
-                        if (isHighlighted) {
-                            const found = wordThresholds.findIndex(t => t > sentenceProgress);
-                            activeWordIdx = found === -1 ? wordTokens.length - 1 : found;
-                        }
-                        let currentWordCount = 0;
-
-                        const wordElements = words.map((chunk, chunkIdx) => {
-                            if (chunk.trim().length === 0) {
-                                return <span key={chunkIdx}>{chunk}</span>;
-                            }
-                            const isWordActive = isHighlighted && currentWordCount === activeWordIdx;
-                            const isWordPast = (isHighlighted && currentWordCount < activeWordIdx) || (idx < currentSentenceIdx);
-
-                            let wordClass = 'word';
-                            if (isWordActive) wordClass += ' current';
-                            else if (isWordPast) wordClass += ' spoken';
-
-                            currentWordCount++;
-                            return <span key={chunkIdx} className={wordClass}>{chunk}</span>;
-                        });
-
-                        return (
-                            <div
-                                key={idx}
-                                ref={(el) => { sentenceRefs.current[idx] = el; }}
-                                className={`sentence ${isHighlighted ? 'active' : ''}`}
-                                onClick={() => handleSeek(idx)}
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`Play sentence ${idx + 1}`}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault();
-                                        handleSeek(idx);
-                                    }
-                                }}
-                            >
-                                {wordElements}
-                            </div>
-                        );
-                    })}
-                </div>
-                {lastError && (
-                    <div className="reader-error">
-                        Error: {lastError}
-                    </div>
-                )}
-            </div>
-
-            {/* PLAYER BAR */}
-            <div className="player">
-                <button
-                    className="p-btn"
-                    onClick={() => handleSeek(Math.max(0, currentSentenceIdx - 1))}
-                    disabled={currentSentenceIdx <= 0}
-                    aria-label="Previous sentence"
-                >
-                    <SkipBack size={16} />
-                </button>
-                <button
-                    className="p-play"
-                    onClick={togglePlay}
-                    aria-label="Play or Pause"
-                >
-                    {playbackState === 'playing' ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="play-icon-offset" />}
-                </button>
-                <button
-                    className="p-btn"
-                    onClick={() => handleSeek(Math.min(sentences.length - 1, currentSentenceIdx + 1))}
-                    disabled={currentSentenceIdx >= sentences.length - 1}
-                    aria-label="Next sentence"
-                >
-                    <SkipForward size={16} />
-                </button>
-
-                <div className="p-divider"></div>
-
-                <div className="p-speed" onClick={handleSpeedToggle} aria-label="Toggle Speed">
-                    {speed}×
-                </div>
-
-                <div className="p-divider"></div>
-
-                <div className="p-voice" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
-                    <div className={`p-wave ${playbackState === 'playing' ? 'playing' : ''}`}>
-                        <div className="pw"></div><div className="pw"></div>
-                        <div className="pw"></div><div className="pw"></div>
-                    </div>
-                    {voiceUI}
-
-                    {/* Voice Selection Dropdown */}
-                    <div className={`p-voice-dropdown ${isDropdownOpen ? 'open' : ''}`}>
-                        {(['onyx', 'echo', 'fable', 'nova', 'shimmer', 'alloy'] as TTSVoice[]).map(v => (
-                            <div
-                                key={v}
-                                className={`p-vopt ${voiceUI === v ? 'sel' : ''}`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleVoiceChange(v);
-                                    setIsDropdownOpen(false);
-                                }}
-                            >
-                                {v}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="p-divider" style={{ marginRight: '8px' }}></div>
-
-                <div className="p-progress" onClick={handleSeekClick}>
-                    <div className="p-fill" style={{ '--p-fill-width': `${overallProgressPct}%` } as React.CSSProperties}></div>
-                </div>
-            </div>
+            <div className="ambient"><div className="glow-1" /><div className="glow-2" /></div>
+            {progressBar}
+            {topBar}
+            {sentencesPanel}
+            {playerBar}
         </div>
     );
 }

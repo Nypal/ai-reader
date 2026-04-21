@@ -7,6 +7,7 @@ interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
     onArena?: () => void;
     onPrewarm?: (sentence0: string, voice: string, lang: string) => void;
+    onPdfReady?: (file: File | null, pageTexts: string[]) => void;
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -56,9 +57,12 @@ const initialTestState: SystemTestState = {
 
 // Removed local extractFirstSentence — we now use useSentenceSplitter directly
 
-export default function InputView({ onStart, onArena, onPrewarm }: InputViewProps) {
+export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: InputViewProps) {
     const [text, setText] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
+    const [pdfFile, setPdfFile] = useState<File | null>(null);
+    const [pdfPageCount, setPdfPageCount] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
     const [voiceOpen, setVoiceOpen] = useState(false);
 
@@ -197,25 +201,48 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
             const pdfjsLib = await import('pdfjs-dist');
             const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min?url');
             pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-            
+
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = '';
+            const pageTexts: string[] = [];
+
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items
                     .map((item) => ('str' in item ? (item as { str: string }).str : ''))
                     .join(' ');
-                fullText += pageText + '\n\n';
+                pageTexts.push(pageText);
             }
-            setText(fullText.trim());
+
+            const fullText = pageTexts.join('\n\n').trim();
+            setText(fullText);
+            setPdfFile(file);
+            setPdfPageCount(pdf.numPages);
+            onPdfReady?.(file, pageTexts);
         } catch (error) {
             console.error('Error extracting PDF:', error);
             alert('Failed to extract text from PDF.');
         } finally {
             setIsExtracting(false);
         }
+    };
+
+    const removePdf = () => {
+        setPdfFile(null);
+        setPdfPageCount(0);
+        setText('');
+        onPdfReady?.(null, []);
+    };
+
+    const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file?.type === 'application/pdf') extractTextFromPdf(file);
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -361,6 +388,43 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
                         style={{ display: 'none' }}
                     />
                 </div>
+
+                {/* ── PDF Zone ── */}
+                {!pdfFile ? (
+                    <div
+                        className={`iv-pdf-zone ${isDragging ? 'dragging' : ''} ${isExtracting ? 'loading' : ''}`}
+                        onClick={() => !isExtracting && fileInputRef.current?.click()}
+                        onDragEnter={handleDragEnter}
+                        onDragLeave={handleDragLeave}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Upload PDF"
+                        onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+                    >
+                        <span className="iv-pdf-zone-icon">
+                            {isExtracting ? '⏳' : isDragging ? '📥' : '📄'}
+                        </span>
+                        <div className="iv-pdf-zone-text">
+                            <span className="iv-pdf-zone-title">
+                                {isExtracting ? 'Extracting text…' : isDragging ? 'Drop your PDF' : 'Upload a PDF'}
+                            </span>
+                            <span className="iv-pdf-zone-sub">
+                                {isExtracting ? 'Please wait' : 'Read it and see the document side by side'}
+                            </span>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="iv-pdf-loaded">
+                        <span className="iv-pdf-loaded-icon">📄</span>
+                        <div className="iv-pdf-loaded-info">
+                            <span className="iv-pdf-loaded-name">{pdfFile.name}</span>
+                            <span className="iv-pdf-loaded-pages">{pdfPageCount} pages · PDF view enabled</span>
+                        </div>
+                        <button className="iv-pdf-remove" onClick={removePdf} aria-label="Remove PDF" title="Remove PDF">✕</button>
+                    </div>
+                )}
 
                 {/* ── Controls row: Mode | Voice | Lang ── */}
                 <div className="iv-controls">

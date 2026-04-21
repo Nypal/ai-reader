@@ -918,3 +918,121 @@
     border-color: var(--accent);
     color: var(--accent2);
 }
+
+/* ── PDF Zone ── */
+.iv-pdf-zone {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    border-radius: 14px;
+    border: 1.5px dashed var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    width: 100%;
+    max-width: 640px;
+    margin-top: 10px;
+}
+
+.iv-pdf-zone:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.iv-pdf-zone.dragging {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    transform: scale(1.01);
+}
+
+.iv-pdf-zone.loading {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.iv-pdf-zone-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.iv-pdf-zone-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.iv-pdf-zone-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-zone-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+}
+
+/* ── PDF Loaded Badge ── */
+.iv-pdf-loaded {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--accent);
+    background: var(--accent-dim);
+    width: 100%;
+    max-width: 640px;
+    margin-top: 10px;
+}
+
+.iv-pdf-loaded-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.iv-pdf-loaded-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.iv-pdf-loaded-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.iv-pdf-loaded-pages {
+    font-size: 11px;
+    color: var(--accent2);
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-remove:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+}

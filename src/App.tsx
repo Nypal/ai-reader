@@ -21,6 +21,8 @@ function App() {
   const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
   const [prefetchedQuiz, setPrefetchedQuiz] = useState<PrefetchedQuiz | null>(null);
   const [prewarmBlob, setPrewarmBlob] = useState<{ blob: Blob; voice: string; lang: string } | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfPageTexts, setPdfPageTexts] = useState<string[] | null>(null);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem('playlearn_theme') || 'sepia';
@@ -65,10 +67,17 @@ function App() {
     }
   };
 
+  const handlePdfReady = (file: File | null, pageTexts: string[]) => {
+    setPdfFile(file);
+    setPdfPageTexts(file ? pageTexts : null);
+  };
+
   const handleRestart = () => {
     setContent('');
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
+    setPdfFile(null);
+    setPdfPageTexts(null);
     setAppState('input');
   };
 
@@ -111,6 +120,8 @@ function App() {
     setContent('');
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
+    setPdfFile(null);
+    setPdfPageTexts(null);
     prewarmPromiseRef.current = null;
     setAppState('input');
   };
@@ -139,7 +150,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <InputView onStart={handleStartReading} onArena={handleGoToArena} onPrewarm={handlePrewarm} />
+              <InputView onStart={handleStartReading} onArena={handleGoToArena} onPrewarm={handlePrewarm} onPdfReady={handlePdfReady} />
             </motion.div>
           )}
           {appState === 'reading' && (
@@ -150,7 +161,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <ReaderView content={content} readingLanguage={readingLanguage} prewarmBlob={prewarmBlob} prewarmPromiseRef={prewarmPromiseRef} onFinish={handleFinishReading} onBack={() => { setPrefetchedQuiz(null); setPrewarmBlob(null); prewarmPromiseRef.current = null; setAppState('input'); }} />
+              <ReaderView content={content} readingLanguage={readingLanguage} prewarmBlob={prewarmBlob} prewarmPromiseRef={prewarmPromiseRef} pdfFile={pdfFile} pdfPageTexts={pdfPageTexts} onFinish={handleFinishReading} onBack={() => { setPrefetchedQuiz(null); setPrewarmBlob(null); prewarmPromiseRef.current = null; setPdfFile(null); setPdfPageTexts(null); setAppState('input'); }} />
             </motion.div>
           )}
           {appState === 'quiz' && (

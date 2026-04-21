@@ -657,6 +657,192 @@
 }
 
 
+/* ══════════════════════════════════════════
+   PDF Split-Screen Layout
+   ══════════════════════════════════════════ */
+
+/* Split page: fill full viewport, no scroll on root */
+.reader-page--split {
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Body below the fixed topbar: flex row, fills remaining height */
+.reader-split-body {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    padding-top: 56px; /* matches topbar height */
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* ── PDF Pane (left, 55%) ── */
+.pdf-pane {
+    flex: 0 0 55%;
+    width: 55%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    transition: flex 0.3s var(--ease), width 0.3s var(--ease), opacity 0.3s;
+    scroll-behavior: smooth;
+}
+
+.pdf-pane--hidden {
+    flex: 0 0 0;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    border-right: none;
+}
+
+.pdf-pane--visible {
+    opacity: 1;
+}
+
+/* ── Text + Player Pane (right, 45%) ── */
+.reader-text-pane {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Scrollable text area inside text pane */
+.reader-text-pane .reader-content {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding-top: 32px;
+    padding-bottom: 100px;
+    max-width: none;
+    margin: 0;
+}
+
+/* Player inside text pane: stick to bottom of pane, not viewport */
+.reader-text-pane .player {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    width: auto;
+    margin: 0;
+    border-radius: 0;
+    border-top: 1px solid var(--player-border);
+    border-bottom: none;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ── PDF pages container ── */
+.pdf-pages-container {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+}
+
+/* Each page card */
+.pdf-page-wrapper {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    background: var(--surface);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    transition: border-color 0.3s var(--ease), box-shadow 0.3s;
+    scroll-margin-top: 16px;
+}
+
+.pdf-page-wrapper.pdf-page-current {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow), 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.pdf-page-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 6px 12px;
+    background: var(--surface);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+}
+
+.pdf-page-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* ── Loading state ── */
+.pdf-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    height: 100%;
+    min-height: 200px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.pdf-loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── PDF Toggle Button (topbar) ── */
+.pdf-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--font-sans);
+    letter-spacing: 0.02em;
+    transition: all 0.2s var(--ease);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+
+.pdf-toggle-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.pdf-toggle-btn.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
     .reader-content {
@@ -678,5 +864,50 @@
 
     .reader-topbar {
         padding: 10px 16px;
+    }
+
+    /* Split layout on mobile: stack vertically */
+    .reader-split-body {
+        flex-direction: column;
+    }
+
+    /* PDF pane collapses to 0 height when hidden on mobile */
+    .pdf-pane {
+        flex: none;
+        width: 100%;
+        height: 45vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .pdf-pane--hidden {
+        height: 0;
+        width: 100%;
+        border-bottom: none;
+    }
+
+    /* Text pane fills remaining space */
+    .reader-text-pane {
+        flex: 1 1 0;
+        min-height: 0;
+    }
+
+    /* Player restores pill style on mobile */
+    .reader-text-pane .player {
+        position: fixed;
+        bottom: 16px;
+        left: 5vw;
+        right: 5vw;
+        border-radius: 100px;
+        border: 1px solid var(--player-border);
+        border-top: 1px solid var(--player-border);
+        padding: 8px 12px;
+        gap: 8px;
+        width: auto;
+        transform: none;
+    }
+
+    .reader-text-pane .reader-content {
+        padding-bottom: 120px;
     }
 }
