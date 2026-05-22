@@ -5,9 +5,11 @@ import './InputView.css';
 
 interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
+    onExam?: (text: string) => void;
     onArena?: () => void;
     onPrewarm?: (sentence0: string, voice: string, lang: string) => void;
     onPdfReady?: (file: File | null, pageTexts: string[]) => void;
+    initialContent?: string;
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -57,8 +59,8 @@ const initialTestState: SystemTestState = {
 
 // Removed local extractFirstSentence — we now use useSentenceSplitter directly
 
-export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: InputViewProps) {
-    const [text, setText] = useState('');
+export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfReady, initialContent }: InputViewProps) {
+    const [text, setText] = useState(initialContent ?? '');
     const [isExtracting, setIsExtracting] = useState(false);
     const [pdfFile, setPdfFile] = useState<File | null>(null);
     const [pdfPageCount, setPdfPageCount] = useState(0);
@@ -66,9 +68,11 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
     const [voiceOpen, setVoiceOpen] = useState(false);
 
-    const [mode, setMode] = useState<'read' | 'learn'>(() =>
-        (localStorage.getItem('playlearn_mode') as 'read' | 'learn') || 'read'
-    );
+    const [mode, setMode] = useState<'read' | 'learn' | 'exam'>(() => {
+        const saved = localStorage.getItem('playlearn_mode');
+        if (saved === 'read' || saved === 'learn' || saved === 'exam') return saved;
+        return 'read';
+    });
 
     const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() =>
         (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo'
@@ -129,7 +133,7 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
     const sentence0 = useMemo(() => spoken[0] || '', [spoken]);
 
     useEffect(() => {
-        if (!onPrewarm || !sentence0) return;
+        if (!onPrewarm || !sentence0 || mode === 'exam') return;
         const timer = setTimeout(() => {
             const { voice, lang } = prewarmRef.current;
             const key = `${sentence0}|${voice}|${lang}`;
@@ -138,9 +142,9 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
             onPrewarm(sentence0, voice, lang);
         }, 1500);
         return () => clearTimeout(timer);
-    }, [sentence0, selectedVoice, prewarmLang, onPrewarm]);
+    }, [sentence0, selectedVoice, prewarmLang, onPrewarm, mode]);
 
-    const handleModeSelect = (newMode: 'read' | 'learn') => {
+    const handleModeSelect = (newMode: 'read' | 'learn' | 'exam') => {
         setMode(newMode);
         localStorage.setItem('playlearn_mode', newMode);
     };
@@ -153,6 +157,10 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
 
     const handlePlay = (e: React.MouseEvent<HTMLButtonElement>) => {
         if (!text.trim()) return;
+        if (mode === 'exam') {
+            onExam?.(text);
+            return;
+        }
         // ripple
         const btn = e.currentTarget;
         const rect = btn.getBoundingClientRect();
@@ -313,7 +321,9 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
 
     const wordCount = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
     const hasText = text.trim().length > 0;
-    const ctaLabel = hasText ? (mode === 'read' ? 'Start Reading' : 'Play & Learn') : 'Paste text to begin';
+    const ctaLabel = hasText
+        ? (mode === 'exam' ? 'Practice Test' : mode === 'read' ? 'Start Reading' : 'Play & Learn')
+        : (mode === 'exam' ? 'Paste exam questions to begin' : 'Paste text to begin');
     const currentVoice = TTS_VOICES.find(v => v.id === selectedVoice)!;
 
     return (
@@ -411,7 +421,7 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
                                 {isExtracting ? 'Extracting text…' : isDragging ? 'Drop your PDF' : 'Upload a PDF'}
                             </span>
                             <span className="iv-pdf-zone-sub">
-                                {isExtracting ? 'Please wait' : 'Read it and see the document side by side'}
+                                {isExtracting ? 'Please wait' : mode === 'exam' ? 'All questions parsed automatically' : 'Read it and see the document side by side'}
                             </span>
                         </div>
                     </div>
@@ -439,6 +449,10 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
                             className={`iv-mode-btn ${mode === 'learn' ? 'active' : ''}`}
                             onClick={() => handleModeSelect('learn')}
                         >Learn</button>
+                        <button
+                            className={`iv-mode-btn ${mode === 'exam' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('exam')}
+                        >Exam</button>
                     </div>
 
                     {/* Voice dropdown pill */}
@@ -521,8 +535,10 @@ export default function InputView({ onStart, onArena, onPrewarm, onPdfReady }: I
                 </div>
 
                 {/* ── Hint ── */}
-                <p className={`iv-hint ${mode === 'learn' ? 'show' : ''}`}>
-                    Learn mode runs a quiz and Feynman Test after reading
+                <p className={`iv-hint ${mode !== 'read' ? 'show' : ''}`}>
+                    {mode === 'exam'
+                        ? 'Paste questions or upload a PDF — answer key optional, AI knows CompTIA answers'
+                        : 'Learn mode runs a quiz and open question after reading'}
                 </p>
 
             </div>

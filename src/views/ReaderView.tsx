@@ -276,6 +276,9 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         a.onplaying = () => {
             if (isStoppedRef.current) return;
             setPlaybackState("playing");
+            // Cancel any stale loop before starting a fresh one — prevents
+            // double loops accumulating across sentence transitions.
+            cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = requestAnimationFrame(loop);
         };
         a.onpause = () => {
@@ -284,6 +287,9 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             cancelAnimationFrame(animationFrameRef.current);
         };
         a.onended = () => {
+            // onended does NOT fire a pause event, so we must cancel RAF here
+            // or the loop leaks into the next sentence.
+            cancelAnimationFrame(animationFrameRef.current);
             if (isStoppedRef.current) return;
         };
         a.onerror = () => {
@@ -560,6 +566,10 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
 
         a.onended = () => {
+            // Cancel RAF unconditionally — onended never fires a pause event,
+            // so without this the loop leaks into the next sentence regardless
+            // of run state.
+            cancelAnimationFrame(animationFrameRef.current);
             if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
             const tgap = nowMs();
 
@@ -604,6 +614,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         };
 
         try {
+            a.muted = false;
+            a.volume = 1;
             a.currentTime = 0;
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;

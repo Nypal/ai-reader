@@ -20,6 +20,7 @@ function App() {
   const [readingMode, setReadingMode] = useState<'read' | 'learn'>('learn');
   const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
   const [prefetchedQuiz, setPrefetchedQuiz] = useState<PrefetchedQuiz | null>(null);
+  const [examMode, setExamMode] = useState(false);
   const [prewarmBlob, setPrewarmBlob] = useState<{ blob: Blob; voice: string; lang: string } | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfPageTexts, setPdfPageTexts] = useState<string[] | null>(null);
@@ -58,7 +59,6 @@ function App() {
 
   const handleFinishReading = () => {
     if (readingMode === 'read') {
-      setContent('');
       setPrefetchedQuiz(null);
       setPrewarmBlob(null);
       setAppState('input');
@@ -72,8 +72,30 @@ function App() {
     setPdfPageTexts(file ? pageTexts : null);
   };
 
+  const handleStartExam = async (text: string) => {
+    setExamMode(true);
+    setContent(text);
+    setPrefetchedQuiz({ loading: true });
+    setAppState('quiz');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/parse-exam`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Parse error ${res.status}`);
+      }
+      const data = await res.json();
+      setPrefetchedQuiz({ data, loading: false });
+    } catch (err) {
+      setPrefetchedQuiz({ error: err instanceof Error ? err.message : String(err), loading: false });
+    }
+  };
+
   const handleRestart = () => {
-    setContent('');
+    setExamMode(false);
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
     setPdfFile(null);
@@ -118,6 +140,7 @@ function App() {
 
   const handleGoHome = () => {
     setContent('');
+    setExamMode(false);
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
     setPdfFile(null);
@@ -150,7 +173,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <InputView onStart={handleStartReading} onArena={handleGoToArena} onPrewarm={handlePrewarm} onPdfReady={handlePdfReady} />
+              <InputView onStart={handleStartReading} onExam={handleStartExam} onArena={handleGoToArena} onPrewarm={handlePrewarm} onPdfReady={handlePdfReady} initialContent={content} />
             </motion.div>
           )}
           {appState === 'reading' && (
@@ -176,6 +199,7 @@ function App() {
                 content={content}
                 lang={readingLanguage === 'french' ? 'fr' : 'en'}
                 prefetchedQuiz={prefetchedQuiz}
+                examMode={examMode}
                 onRestart={handleRestart}
                 onArena={handleGoToArena}
               />

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ArrowLeft, Volume2, Square, Loader2 } from 'lucide-react';
 import { AuditService } from '../services/AuditService';
 import type { PrefetchedQuiz } from '../App';
 import './QuizView.css';
@@ -8,8 +8,15 @@ interface QuizViewProps {
     content: string;
     lang?: 'en' | 'fr';
     prefetchedQuiz?: PrefetchedQuiz | null;
+    examMode?: boolean;
     onRestart: () => void;
     onArena?: () => void;
+}
+
+interface ExamExplanation {
+    bestNow: string;
+    notLabel: string;
+    notReason: string;
 }
 
 interface Question {
@@ -17,8 +24,11 @@ interface Question {
     question: string;
     options: string[];
     correctAnswerIndex: number;
+    correctAnswerIndices: number[];
+    requiredSelections: number;
     explanation?: string;
     reference?: string;
+    examExplanation?: ExamExplanation;
 }
 
 interface QuizData {
@@ -119,32 +129,40 @@ function normalizeQuizData(raw: unknown): QuizData {
         openQuestion: typeof r.openQuestion === 'string' ? r.openQuestion : undefined,
         questions: ((r.questions as unknown[]) ?? []).map((q) => {
             const qr = q as Record<string, unknown>;
-            const correctIndexRaw = typeof qr.correct === 'number' ? Number(qr.correct) : (Number(qr.correctAnswerIndex) || 0);
+            const primaryIdx = typeof qr.correct === 'number' ? Number(qr.correct) : (Number(qr.correctAnswerIndex) || 0);
+            const rawCorrectIndices: number[] = Array.isArray(qr.correctAnswerIndices)
+                ? (qr.correctAnswerIndices as number[])
+                : [primaryIdx];
+            const requiredSelections = typeof qr.requiredSelections === 'number' ? qr.requiredSelections : 1;
 
             let options = Array.isArray(qr.options) ? (qr.options as string[]) : [];
-            let correctAnswerIndex = correctIndexRaw;
+            let correctAnswerIndices = rawCorrectIndices;
+            let correctAnswerIndex = primaryIdx;
 
             if (options.length > 0) {
-                const optionsWithIndex = options.map((opt, i) => ({ text: opt, isCorrect: i === correctIndexRaw }));
-                for (let i = optionsWithIndex.length - 1; i > 0; i--) {
+                const tagged = options.map((opt, i) => ({ text: opt, isCorrect: rawCorrectIndices.includes(i) }));
+                for (let i = tagged.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
-                    [optionsWithIndex[i], optionsWithIndex[j]] = [optionsWithIndex[j], optionsWithIndex[i]];
+                    [tagged[i], tagged[j]] = [tagged[j], tagged[i]];
                 }
-                options = optionsWithIndex.map(o => String(o.text));
-                correctAnswerIndex = optionsWithIndex.findIndex(o => o.isCorrect);
-                if (correctAnswerIndex === -1) correctAnswerIndex = 0;
+                options = tagged.map(o => String(o.text));
+                correctAnswerIndices = tagged.map((o, i) => o.isCorrect ? i : -1).filter(i => i !== -1);
+                if (correctAnswerIndices.length === 0) correctAnswerIndices = [0];
+                correctAnswerIndex = correctAnswerIndices[0];
             }
 
             return {
                 ...qr,
                 options,
                 correctAnswerIndex,
+                correctAnswerIndices,
+                requiredSelections,
             } as Question;
         }),
     };
 }
 
-export default function QuizView({ content, lang = 'en', prefetchedQuiz, onRestart, onArena }: QuizViewProps) {
+export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMode = false, onRestart, onArena }: QuizViewProps) {
     const [phase, setPhase] = useState<Phase>('quiz');
     const [quizData, setQuizData] = useState<QuizData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -154,7 +172,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     const [currentIdx, setCurrentIdx] = useState(0);
     const [qResults, setQResults] = useState<(boolean | null)[]>([]);
     const [answered, setAnswered] = useState(false);
-    const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+    const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
 
     // Open question state
     const [userAnswer, setUserAnswer] = useState('');
@@ -164,6 +182,52 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     // Results state
     const [masteryScore, setMasteryScore] = useState(0);
     const [retentionPct, setRetentionPct] = useState(0);
+
+    // TTS state (exam mode)
+    const [ttsLoading, setTtsLoading] = useState(false);
+    const [ttsPlaying, setTtsPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const stopTts = useCallback(() => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.src = '';
+            audioRef.current = null;
+        }
+        setTtsPlaying(false);
+        setTtsLoading(false);
+    }, []);
+
+    const playQuestion = useCallback(async (questionText: string) => {
+        if (ttsLoading) return;
+        if (ttsPlaying) { stopTts(); return; }
+
+        const voice = localStorage.getItem('playlearn_voice') || 'echo';
+        setTtsLoading(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: questionText, voice, lang: 'en' }),
+            });
+            if (!res.ok) throw new Error('TTS failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            audio.onended = () => { URL.revokeObjectURL(url); setTtsPlaying(false); };
+            audio.onerror = () => { URL.revokeObjectURL(url); setTtsPlaying(false); setTtsLoading(false); };
+            await audio.play();
+            setTtsPlaying(true);
+        } catch {
+            setTtsPlaying(false);
+        } finally {
+            setTtsLoading(false);
+        }
+    }, [ttsLoading, ttsPlaying, stopTts]);
+
+    // Stop audio when moving to a new question
+    useEffect(() => { stopTts(); }, [currentIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Load quiz — use prefetched result when available, otherwise fetch now.
     useEffect(() => {
@@ -208,23 +272,42 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     const selectAnswer = useCallback((optIdx: number) => {
         if (answered || !quizData) return;
         const q = quizData.questions[currentIdx];
-        const correct = optIdx === q.correctAnswerIndex;
-        setAnswered(true);
-        setSelectedIdx(optIdx);
-        setQResults(prev => {
-            const next = [...prev];
-            next[currentIdx] = correct;
-            return next;
-        });
-        AuditService.logQuizResult(q.type ?? 'question', correct);
+        const required = q.requiredSelections ?? 1;
+
+        if (required === 1) {
+            // Single-select: immediate reveal
+            const correct = q.correctAnswerIndices.includes(optIdx);
+            setAnswered(true);
+            setSelectedIndices([optIdx]);
+            setQResults(prev => { const n = [...prev]; n[currentIdx] = correct; return n; });
+            AuditService.logQuizResult(q.type ?? 'question', correct);
+        } else {
+            // Multi-select: toggle selection; submit only via "Check Answers" button
+            setSelectedIndices(prev => {
+                if (prev.includes(optIdx)) return prev.filter(i => i !== optIdx);
+                if (prev.length < required) return [...prev, optIdx];
+                return prev; // already at limit
+            });
+        }
     }, [answered, quizData, currentIdx]);
+
+    const submitMultiSelect = useCallback(() => {
+        if (answered || !quizData) return;
+        const q = quizData.questions[currentIdx];
+        const correct = [...selectedIndices].sort().join(',') === [...q.correctAnswerIndices].sort().join(',');
+        setAnswered(true);
+        setQResults(prev => { const n = [...prev]; n[currentIdx] = correct; return n; });
+        AuditService.logQuizResult(q.type ?? 'question', correct);
+    }, [answered, quizData, currentIdx, selectedIndices]);
 
     const handleNext = () => {
         if (!quizData) return;
         if (currentIdx < quizData.questions.length - 1) {
             setCurrentIdx(prev => prev + 1);
             setAnswered(false);
-            setSelectedIdx(null);
+            setSelectedIndices([]);
+        } else if (examMode) {
+            goToResults();
         } else {
             setPhase('open');
         }
@@ -272,8 +355,9 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     const goToResults = () => {
         if (!quizData) return;
         const qScore = Math.round((qResults.filter(Boolean).length / quizData.questions.length) * 100);
-        const understandingBonus = answerResult ? Math.round((answerResult.understandingScore / 10) * 20) : 0;
-        const mastery = Math.min(100, Math.round(qScore * 0.8 + understandingBonus));
+        const mastery = examMode
+            ? qScore
+            : Math.min(100, Math.round(qScore * 0.8 + (answerResult ? Math.round((answerResult.understandingScore / 10) * 20) : 0)));
         setMasteryScore(mastery);
         setPhase('results');
         setTimeout(() => setRetentionPct(mastery), 300);
@@ -308,8 +392,16 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
 
     const questions = quizData.questions;
     const currentQ = questions[currentIdx];
-    const isCorrect = selectedIdx !== null && selectedIdx === currentQ.correctAnswerIndex;
+    const requiredSelections = currentQ.requiredSelections ?? 1;
+    const isMultiSelect = requiredSelections > 1;
+    const correctAnswerIndices = currentQ.correctAnswerIndices ?? [currentQ.correctAnswerIndex];
+    const isCorrect = answered && (
+        isMultiSelect
+            ? [...selectedIndices].sort().join(',') === [...correctAnswerIndices].sort().join(',')
+            : selectedIndices[0] === currentQ.correctAnswerIndex
+    );
     const badgeInfo = BADGE_TYPES[currentQ?.type?.toLowerCase()] ?? BADGE_TYPES.main;
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
 
     // ── QUIZ PHASE ───────────────────────────────────────────────
     if (phase === 'quiz') {
@@ -318,10 +410,10 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                 <div className="qz-logo">
                     <div className="qz-logo-mark">✦</div>
                     <span className="qz-logo-name">Alphie</span>
-                    <span className="qz-logo-sub">Active Recall — Step 2 of 3</span>
+                    <span className="qz-logo-sub">{examMode ? 'Exam Practice' : 'Active Recall — Step 2 of 3'}</span>
                 </div>
 
-                <PhaseTracker phase="quiz" />
+                {!examMode && <PhaseTracker phase="quiz" />}
 
                 <div className="qz-card">
                     {/* Q-dots counter */}
@@ -341,18 +433,41 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                     </div>
 
                     <div className={`q-badge ${badgeInfo.cls}`}>{badgeInfo.label}</div>
-                    <div className="q-text">{currentQ.question}</div>
+                    <div className="q-text-row">
+                        <div className="q-text">{currentQ.question}</div>
+                        {examMode && (
+                            <button
+                                type="button"
+                                className={`q-tts-btn ${ttsPlaying ? 'playing' : ''}`}
+                                onClick={() => playQuestion(currentQ.question)}
+                                disabled={ttsLoading}
+                                title={ttsPlaying ? 'Stop' : 'Read question aloud'}
+                            >
+                                {ttsLoading ? <Loader2 size={16} className="q-tts-spin" /> : ttsPlaying ? <Square size={16} /> : <Volume2 size={16} />}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Multi-select hint */}
+                    {isMultiSelect && (
+                        <div className="multi-select-hint">
+                            Select {requiredSelections} answers · {answered ? 'done' : `${selectedIndices.length} / ${requiredSelections} chosen`}
+                        </div>
+                    )}
 
                     {/* MCQ Options */}
                     <div className="mcq-options">
                         {(currentQ.options ?? []).map((opt, i) => {
-                            const letters = ['A', 'B', 'C', 'D'];
+                            const isSelected = selectedIndices.includes(i);
+                            const isCorrectOpt = correctAnswerIndices.includes(i);
                             let cls = 'mcq-opt';
                             if (answered) {
-                                if (i === currentQ.correctAnswerIndex && i === selectedIdx) cls += ' selected-correct';
-                                else if (i === selectedIdx) cls += ' selected-wrong';
-                                else if (i === currentQ.correctAnswerIndex) cls += ' show-correct';
+                                if (isCorrectOpt && isSelected) cls += ' selected-correct';
+                                else if (isSelected && !isCorrectOpt) cls += ' selected-wrong';
+                                else if (isCorrectOpt) cls += ' show-correct';
                                 else cls += ' disabled';
+                            } else if (isMultiSelect && isSelected) {
+                                cls += ' multi-selected';
                             }
                             return (
                                 <div
@@ -368,7 +483,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                                         }
                                     }}
                                 >
-                                    <div className="opt-letter">{letters[i]}</div>
+                                    <div className="opt-letter">{letters[i] ?? String(i + 1)}</div>
                                     <div className="opt-text">{opt}</div>
                                     <div className="opt-check">✓</div>
                                 </div>
@@ -376,8 +491,27 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                         })}
                     </div>
 
+                    {/* Check Answers button for multi-select (before answered) */}
+                    {isMultiSelect && !answered && selectedIndices.length === requiredSelections && (
+                        <button type="button" className="qz-btn-primary" onClick={submitMultiSelect}>
+                            Check Answers →
+                        </button>
+                    )}
+
                     {/* Explanation */}
-                    {answered && (
+                    {answered && examMode && isCorrect && !isMultiSelect && currentQ.examExplanation?.bestNow ? (
+                        <div className="explanation-box correct exam-explain-box">
+                            <div className="ex-head">Correct!</div>
+                            <div className="exam-explain-line">
+                                <span className="exam-explain-label">Why:</span>
+                                <span className="exam-explain-text">{currentQ.examExplanation.bestNow}</span>
+                            </div>
+                            <div className="exam-explain-line">
+                                <span className="exam-explain-label">Why not {currentQ.examExplanation.notLabel}:</span>
+                                <span className="exam-explain-text">{currentQ.examExplanation.notReason}</span>
+                            </div>
+                        </div>
+                    ) : answered ? (
                         <div className={`explanation-box ${isCorrect ? 'correct' : 'wrong'}`}>
                             <div className="ex-head">{isCorrect ? '✅ Correct!' : '❌ Not quite'}</div>
                             <div>{currentQ.explanation ?? ''}</div>
@@ -385,17 +519,17 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                                 <div className="ex-ref">{currentQ.reference}</div>
                             )}
                         </div>
-                    )}
+                    ) : null}
 
                     {answered && (
-                        <button className="qz-btn-primary" onClick={handleNext}>
-                            {currentIdx < questions.length - 1 ? 'Next Question →' : 'Open Question →'}
+                        <button type="button" className="qz-btn-primary" onClick={handleNext}>
+                            {currentIdx < questions.length - 1 ? 'Next Question →' : (examMode ? 'See Results →' : 'Open Question →')}
                         </button>
                     )}
                 </div>
 
                 <ScienceTip icon="🧠">
-                    <strong style={{ color: 'var(--accent)' }}>Why multiple choice?</strong> Choosing forces your brain to discriminate between ideas — much stronger than just reading. The wrong answers are designed to reveal misconceptions.
+                    <strong className="tip-accent">Why multiple choice?</strong> Choosing forces your brain to discriminate between ideas — much stronger than just reading. The wrong answers are designed to reveal misconceptions.
                 </ScienceTip>
             </div>
         );
@@ -499,10 +633,13 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
     }
 
     // ── RESULTS PHASE ─────────────────────────────────────────────
-    const masteryMsg =
-        masteryScore >= 80 ? 'Excellent mastery. You truly understood this text.' :
+    const masteryMsg = examMode
+        ? (masteryScore >= 80 ? 'Excellent! You\'re well prepared for this exam.' :
+            masteryScore >= 55 ? 'Good score. Review the questions you missed before the exam.' :
+                'Keep studying — go over the missed questions and try again.')
+        : (masteryScore >= 80 ? 'Excellent mastery. You truly understood this text.' :
             masteryScore >= 55 ? 'Good understanding. A few gaps left to close.' :
-                'You need to revisit this material before it sticks.';
+                'You need to revisit this material before it sticks.');
 
     const failedQs = questions.filter((_, i) => qResults[i] === false);
 
@@ -529,12 +666,12 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                 <span className="qz-logo-sub">Session Complete</span>
             </div>
 
-            <PhaseTracker phase="results" />
+            {!examMode && <PhaseTracker phase="results" />}
 
             <div className="qz-card">
                 {/* Mastery */}
                 <div className="mastery-banner">
-                    <div className="mastery-score-label">Mastery Score</div>
+                    <div className="mastery-score-label">{examMode ? 'Exam Score' : 'Mastery Score'}</div>
                     <div className="mastery-score">{masteryScore}%</div>
                     <div className="mastery-label">{masteryMsg}</div>
                 </div>
@@ -568,7 +705,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, onResta
                     setCurrentIdx(0);
                     setQResults(new Array(questions.length).fill(null));
                     setAnswered(false);
-                    setSelectedIdx(null);
+                    setSelectedIndices([]);
                     setAnswerResult(null);
                     setUserAnswer('');
                 }}>

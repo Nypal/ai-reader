@@ -328,6 +328,104 @@ Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["o
 app.post('/api/quiz', aiLimiter, generateQuiz);
 app.post('/api/questions', aiLimiter, generateQuiz);
 
+// Split large exam text into chunks at question boundaries to stay within max_tokens.
+function splitExamText(text) {
+    const MAX_CHUNK = 12000; // characters per chunk
+    if (text.length <= MAX_CHUNK) return [text];
+
+    const chunks = [];
+    let start = 0;
+
+    while (start < text.length) {
+        let end = Math.min(start + MAX_CHUNK, text.length);
+
+        if (end < text.length) {
+            // Look back up to 2500 chars for a question number boundary
+            const lookbackStart = Math.max(start, end - 2500);
+            const segment = text.slice(lookbackStart, end);
+            // Match patterns: "A6. ", "A7. ", "12. A", "Q12. " etc.
+            const matches = [...segment.matchAll(/[A-Z]\d+\.\s|(?<!\d)\d{1,3}\.\s+[A-Z]/g)];
+            if (matches.length > 0) {
+                end = lookbackStart + matches[matches.length - 1].index;
+            }
+        }
+
+        const chunk = text.slice(start, end).trim();
+        if (chunk.length > 50) chunks.push(chunk);
+        start = end;
+    }
+
+    return chunks;
+}
+
+const EXAM_CHUNK_SYSTEM_PROMPT = `You are an exam parser. Extract EVERY multiple-choice question from the provided text — do not skip any.
+
+Rules:
+- Include only questions that have explicit answer choices (A/B/C/D or labeled options).
+- Strip letter prefixes (A., B., C., etc.) from option text — keep only the content.
+- correctAnswerIndex is 0-based (0=A, 1=B, 2=C, 3=D, 4=E, 5=F).
+- If an answer key is present in the text (e.g. "A6: B" or "1. B  2. C  3. A..."), use it.
+- If NO answer key appears, use your training knowledge (especially for CompTIA, Cisco, Microsoft exams).
+- explanation: one short sentence (max 12 words) saying why the answer is correct.
+- type: always "exam".
+
+MULTI-SELECT questions (those with "Pick TWO", "Select TWO", "Choose TWO", "(Select TWO)", etc.):
+- Set requiredSelections to the stated count (usually 2).
+- Set correctAnswerIndices to an array of ALL correct 0-based option indices, e.g. [0, 2].
+- Set correctAnswerIndex to the first correct index (backward compat).
+- Set examExplanation fields to empty strings "".
+
+SINGLE-SELECT questions (all others):
+- Set requiredSelections: 1.
+- Set correctAnswerIndices: [correctAnswerIndex].
+- examExplanation — identify the most tempting wrong answer:
+  - bestNow: max 12 words — why the symptom points to the correct answer; avoid "resolves the issue"
+  - notLabel: 1-3 words for the most tempting wrong option (no letter prefix)
+  - notReason: max 12 words — why that wrong answer fits less given the symptom
+
+Return ONLY valid JSON:
+{"questions":[{"type":"exam","question":"...","options":["...","...","...","..."],"correctAnswerIndex":2,"correctAnswerIndices":[2],"requiredSelections":1,"explanation":"...","examExplanation":{"bestNow":"...","notLabel":"...","notReason":"..."}}]}`;
+
+async function parseExamChunk(chunkText, openai) {
+    const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 8000,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+            { role: 'system', content: EXAM_CHUNK_SYSTEM_PROMPT },
+            { role: 'user', content: chunkText },
+        ],
+    });
+
+    const parsed = JSON.parse(completion.choices[0].message.content);
+    return Array.isArray(parsed.questions) ? parsed.questions : [];
+}
+
+app.post('/api/parse-exam', aiLimiter, async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+        if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
+
+        const chunks = splitExamText(text);
+        console.log(`[ParseExam] Parsing ${text.length} chars across ${chunks.length} chunk(s)...`);
+
+        const chunkResults = await Promise.all(chunks.map(chunk => parseExamChunk(chunk, openai)));
+        const allQuestions = chunkResults.flat();
+
+        if (allQuestions.length === 0) {
+            return res.status(422).json({ error: 'No multiple-choice questions found. Make sure to include answer choices (A, B, C, D) with your questions.' });
+        }
+
+        console.log(`[ParseExam] Extracted ${allQuestions.length} questions from ${chunks.length} chunk(s).`);
+        res.json({ questions: allQuestions });
+    } catch (error) {
+        console.error('ParseExam Error:', error);
+        res.status(500).json({ error: 'Failed to parse exam questions.' });
+    }
+});
+
 app.post('/api/evaluate', aiLimiter, async (req, res) => {
     try {
         const { question, answer, originalText } = req.body;

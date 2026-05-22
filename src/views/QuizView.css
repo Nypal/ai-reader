@@ -256,12 +256,69 @@
 }
 
 /* ── Q Text ── */
+.q-text-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.q-text-row .q-text {
+    margin-bottom: 0;
+    flex: 1;
+}
+
 .q-text {
     font-size: 16px;
     font-weight: 600;
     line-height: 1.5;
     margin-bottom: 18px;
     color: var(--text);
+}
+
+.q-tts-btn {
+    flex-shrink: 0;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(123, 110, 246, 0.30);
+    background: rgba(123, 110, 246, 0.08);
+    color: var(--accent);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.q-tts-btn:hover:not(:disabled) {
+    background: rgba(123, 110, 246, 0.18);
+    border-color: var(--accent);
+}
+
+.q-tts-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.q-tts-btn.playing {
+    background: rgba(123, 110, 246, 0.20);
+    border-color: var(--accent);
+    animation: tts-pulse 1.2s ease-in-out infinite;
+}
+
+.q-tts-spin {
+    animation: tts-spin 0.8s linear infinite;
+}
+
+@keyframes tts-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(123, 110, 246, 0.4); }
+    50%       { box-shadow: 0 0 0 6px rgba(123, 110, 246, 0); }
+}
+
+@keyframes tts-spin {
+    to { transform: rotate(360deg); }
 }
 
 /* ── MCQ Options ── */
@@ -288,7 +345,7 @@
     width: 100%;
 }
 
-.mcq-opt:hover:not(.disabled):not(.selected-correct):not(.selected-wrong):not(.show-correct) {
+.mcq-opt:hover:not(.disabled):not(.selected-correct):not(.selected-wrong):not(.show-correct):not(.multi-selected) {
     border-color: rgba(123, 110, 246, 0.35);
     background: rgba(123, 110, 246, 0.10);
 }
@@ -370,6 +427,33 @@
     background: rgba(255, 255, 255, 0.02);
 }
 
+/* ── Multi-select ── */
+.multi-select-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
+.mcq-opt.multi-selected {
+    border-color: var(--accent);
+    background: rgba(123, 110, 246, 0.12);
+}
+
+.mcq-opt.multi-selected .opt-letter {
+    background: var(--accent);
+    color: white;
+}
+
+.mcq-opt.multi-selected .opt-check {
+    opacity: 1;
+}
+
+.tip-accent {
+    color: var(--accent);
+}
+
 /* ── Explanation Box ── */
 .explanation-box {
     margin-top: 14px;
@@ -402,6 +486,32 @@
 
 .explanation-box.wrong .ex-head {
     color: var(--error);
+}
+
+.exam-explain-box {
+    gap: 0;
+}
+
+.exam-explain-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 4px;
+}
+
+.exam-explain-label {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--success);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.exam-explain-text {
+    color: var(--text);
+    opacity: 0.85;
 }
 
 .ex-ref {
