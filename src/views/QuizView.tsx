@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Volume2, Square, Loader2 } from 'lucide-react';
 import { AuditService } from '../services/AuditService';
 import type { PrefetchedQuiz } from '../App';
+import { apiFetch } from '../lib/api';
 import './QuizView.css';
 
 interface QuizViewProps {
@@ -205,7 +206,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMod
         const voice = localStorage.getItem('playlearn_voice') || 'echo';
         setTtsLoading(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+            const res = await apiFetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: questionText, voice, lang: 'en' }),
@@ -249,7 +250,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMod
 
         const fetchQuiz = async () => {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
+                const res = await apiFetch('/api/quiz', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: content, lang }),
@@ -319,7 +320,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMod
         if (!userAnswer.trim() || !quizData?.openQuestion) return;
         setAnswerLoading(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/evaluate`, {
+            const res = await apiFetch('/api/evaluate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -643,19 +644,19 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMod
 
     const failedQs = questions.filter((_, i) => qResults[i] === false);
 
-    const steps: { icon: string; text: string }[] = [];
+    const steps: { icon: string; text: React.ReactNode }[] = [];
     if (failedQs.length) {
         steps.push({
             icon: '📖',
-            text: `Re-read the sections covering: <strong>${failedQs.map(q => q.question.slice(0, 50) + '…').join(', ')}</strong>`
+            text: <>Re-read the sections covering: <strong>{failedQs.map(q => q.question.slice(0, 50) + '…').join(', ')}</strong></>
         });
     }
     if (masteryScore < 80) {
-        steps.push({ icon: '⏰', text: 'Review this text again in <strong>24 hours</strong> — spaced repetition doubles your retention.' });
+        steps.push({ icon: '⏰', text: <>Review this text again in <strong>24 hours</strong> — spaced repetition doubles your retention.</> });
     }
     steps.push({ icon: '🔁', text: 'Try the quiz again — each attempt strengthens the neural pathway.' });
     if (masteryScore >= 70) {
-        steps.push({ icon: '⬆️', text: 'You\'re ready to read something <strong>more advanced</strong> on this topic.' });
+        steps.push({ icon: '⬆️', text: <>You're ready to read something <strong>more advanced</strong> on this topic.</> });
     }
 
     return (
@@ -695,7 +696,7 @@ export default function QuizView({ content, lang = 'en', prefetchedQuiz, examMod
                     {steps.map((s, i) => (
                         <div key={i} className="ns-item">
                             <span className="ns-icon">{s.icon}</span>
-                            <span dangerouslySetInnerHTML={{ __html: s.text }} />
+                            <span>{s.text}</span>
                         </div>
                     ))}
                 </div>

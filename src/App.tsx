@@ -6,6 +6,7 @@ import ReaderView from "./views/ReaderView";
 import QuizView from "./views/QuizView";
 import ArenaView from "./views/ArenaView";
 import LandingView from "./views/LandingView";
+import { apiFetch } from './lib/api';
 
 import './App.css';
 
@@ -46,7 +47,7 @@ function App() {
     if (mode === 'learn') {
       const lang = language === 'french' ? 'fr' : 'en';
       setPrefetchedQuiz({ loading: true });
-      fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
+      apiFetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, lang }),
@@ -78,7 +79,7 @@ function App() {
     setPrefetchedQuiz({ loading: true });
     setAppState('quiz');
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/parse-exam`, {
+      const res = await apiFetch('/api/parse-exam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -115,7 +116,7 @@ function App() {
   const handlePrewarm = (sentence0: string, voice: string, lang: string) => {
     setPrewarmBlob(null);
 
-    const promise = fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+    const promise = apiFetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: sentence0, voice, lang }),

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, SkipBack, SkipForward, Play, Pause } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
 import { AuditService } from '../services/AuditService';
+import { apiFetch } from '../lib/api';
 import './ReaderView.css';
 
 interface ReaderViewProps {
@@ -382,7 +383,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             try {
                 const fetchStartMs = nowMs();
                 console.log(`[PlayLearn] fetching TTS (attempt ${attempt + 1}): "${text}"`);
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+                const res = await apiFetch('/api/tts', {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ text, voice: voiceRef.current, lang: readingLanguage === 'french' ? 'fr' : 'en' }),

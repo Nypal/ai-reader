@@ -81,6 +81,15 @@ app.use(cors({
 app.use(express.json({ limit: '5mb' }));
 app.use(globalLimiter);
 
+// API key auth — enforced only when API_SECRET env var is set (skipped in local dev)
+app.use((req, res, next) => {
+    const secret = process.env.API_SECRET;
+    if (!secret || req.path === '/api/health') return next();
+    const token = (req.headers['authorization'] || '').replace('Bearer ', '');
+    if (token !== secret) return res.status(401).json({ error: 'Unauthorized' });
+    next();
+});
+
 // Initialize Clients
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
