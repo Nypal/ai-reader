@@ -304,6 +304,8 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             setPlaybackState("error");
         };
 
+        const cacheSnapshot = cacheRef.current;
+
         return () => {
             a.onplaying = null;
             a.onpause = null;
@@ -311,8 +313,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             a.onerror = null;
 
             const urlToRevoke = currentObjectUrlRef.current;
-            const currentCache = cacheRef.current;
-            const itemsToRevoke = Array.from(currentCache.values());
+            const itemsToRevoke = Array.from(cacheSnapshot.values());
 
             // Defers cleanup to prevent unhandled extension promises
             setTimeout(() => {

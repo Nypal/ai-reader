@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import {
     earnXP as storeEarnXP,
@@ -352,19 +352,21 @@ export default function ArenaView({ onBack }: ArenaViewProps) {
 }
 
 // ── Particle System ───────────────────────────────────────────
+const PARTICLE_COLORS = ['#FFD60A', '#7B6EF6', '#34C759', '#FF9500', '#06B6D4', '#FF453A', '#9B8BFF'];
+
+const PARTICLES = Array.from({ length: 60 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    width: 4 + Math.random() * 8,
+    height: 4 + Math.random() * 8,
+    color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
+    duration: 2 + Math.random() * 3,
+    delay: Math.random() * 1.5,
+    isCircle: Math.random() > 0.5,
+}));
+
 function ParticleSystem() {
-    const colors = ['#FFD60A', '#7B6EF6', '#34C759', '#FF9500', '#06B6D4', '#FF453A', '#9B8BFF'];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const particles = useMemo(() => Array.from({ length: 60 }, (_, i) => ({
-        id: i,
-        left: Math.random() * 100,
-        width: 4 + Math.random() * 8,
-        height: 4 + Math.random() * 8,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        duration: 2 + Math.random() * 3,
-        delay: Math.random() * 1.5,
-        isCircle: Math.random() > 0.5,
-    })), []);
+    const particles = PARTICLES;
 
     return (
         <div className="arena-particles">
