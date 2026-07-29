@@ -116,11 +116,17 @@ function App() {
   const handlePrewarm = (sentence0: string, voice: string, lang: string) => {
     setPrewarmBlob(null);
 
-    const promise = apiFetch('/api/tts', {
+    const fetchPromise = apiFetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: sentence0, voice, lang }),
-    })
+    });
+
+    const timeoutPromise = new Promise<Response>((_, reject) =>
+      setTimeout(() => reject(new Error('Prewarm TTS request timed out')), 15000)
+    );
+
+    const promise = Promise.race([fetchPromise, timeoutPromise])
       .then(res => res.ok ? res.arrayBuffer() : Promise.reject())
       .then(buf => {
         if (buf.byteLength < 1000) {

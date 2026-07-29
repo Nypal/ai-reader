@@ -843,6 +843,7 @@
     background: var(--accent-dim);
 }
 
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
     .reader-content {

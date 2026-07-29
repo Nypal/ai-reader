@@ -579,6 +579,59 @@
     width: 100%;
     margin-top: 16px;
     animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+    display: flex;
+    gap: 12px;
+}
+
+.iv-download-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.iv-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    height: 100%;
+    min-height: 54px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.iv-download-btn:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    box-shadow: 0 4px 20px var(--accent-glow);
+    transform: translateY(-2px);
+}
+
+.iv-download-btn:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+.iv-download-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.iv-download-btn.loading {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.iv-download-error {
+    font-size: 14px;
+    cursor: default;
+    opacity: 0.85;
 }
 
 .iv-cta-btn {

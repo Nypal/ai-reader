@@ -262,6 +262,9 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         }
     }, [currentSentenceIdx]);
 
+    // RAF loop ref — runs while audio is playing to animate sentence progress bar
+    const rafLoopRef = useRef<(() => void) | null>(null);
+
     useEffect(() => {
         const a = new Audio();
         a.preload = "auto";
@@ -273,37 +276,12 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             }
             animationFrameRef.current = requestAnimationFrame(loop);
         };
+        rafLoopRef.current = loop;
 
-        a.onplaying = () => {
-            if (isStoppedRef.current) return;
-            setPlaybackState("playing");
-            // Cancel any stale loop before starting a fresh one — prevents
-            // double loops accumulating across sentence transitions.
-            cancelAnimationFrame(animationFrameRef.current);
-            animationFrameRef.current = requestAnimationFrame(loop);
-        };
-        a.onpause = () => {
-            if (isStoppedRef.current) return;
-            setPlaybackState((s) => (s === "playing" ? "paused" : s));
-            cancelAnimationFrame(animationFrameRef.current);
-        };
-        a.onended = () => {
-            // onended does NOT fire a pause event, so we must cancel RAF here
-            // or the loop leaks into the next sentence.
-            cancelAnimationFrame(animationFrameRef.current);
-            if (isStoppedRef.current) return;
-        };
-        a.onerror = () => {
-            if (isStoppedRef.current) return;
-            const el = audioRef.current;
-            if (el?.error) {
-                console.log("[PlayLearn] audio error code:", el.error.code);
-            }
-            const msg = (el?.error as { message?: string })?.message ?? "";
-            console.error(`[PlayLearn] audio error. MediaError.code=${el?.error?.code ?? "?"} ${msg}`);
-            setLastError(`Audio error. MediaError.code=${el?.error?.code ?? "?"} ${msg}`);
-            setPlaybackState("error");
-        };
+        // NOTE: We intentionally do NOT set onplaying/onpause/onended/onerror here.
+        // Those handlers are set per-sentence inside playIndex so they capture the
+        // correct runId/idx closure. Setting them globally here conflicts with
+        // per-sentence handlers and causes the freeze-on-error bug.
 
         const cacheSnapshot = cacheRef.current;
 
@@ -383,12 +361,19 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
             try {
                 const fetchStartMs = nowMs();
                 console.log(`[PlayLearn] fetching TTS (attempt ${attempt + 1}): "${text}"`);
-                const res = await apiFetch('/api/tts', {
+
+                const fetchPromise = apiFetch('/api/tts', {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ text, voice: voiceRef.current, lang: readingLanguage === 'french' ? 'fr' : 'en' }),
                     signal,
                 });
+
+                const timeoutPromise = new Promise<Response>((_, reject) =>
+                    setTimeout(() => reject(new Error('TTS request timed out after 15s')), 15000)
+                );
+
+                const res = await Promise.race([fetchPromise, timeoutPromise]);
 
                 const ct = res.headers.get("content-type");
                 console.log(`[PlayLearn] status`, res.status, ct);
@@ -567,10 +552,52 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
 
         if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
 
+        // Assign per-sentence event handlers. These MUST be set here (not globally)
+        // so they capture the correct runId and idx — preventing stale closures from
+        // the previous sentence from interfering with the current one.
+        a.onerror = () => {
+            // Clear handlers immediately so they don't fire again on next sentence
+            a.onerror = null;
+            a.onended = null;
+            a.onplaying = null;
+            a.onpause = null;
+            cancelAnimationFrame(animationFrameRef.current);
+            if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+            const errCode = a.error?.code ?? '?';
+            const errMsg = a.error?.message || 'Media decoding failed';
+            console.error(`[PlayLearn] Audio element error idx=${idx} code=${errCode}:`, errMsg);
+            // Instead of hard-stopping, try to skip to next sentence
+            const next = idx + 1;
+            if (next < sentences.length) {
+                console.log(`[PlayLearn] Skipping errored sentence, trying idx=${next}`);
+                void playIndex(next, runIdAtStart);
+            } else {
+                setPlaybackState('error');
+                setLastError(`Audio error at sentence ${idx}: ${errMsg}`);
+            }
+        };
+
+        a.onplaying = () => {
+            if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+            setPlaybackState('playing');
+            cancelAnimationFrame(animationFrameRef.current);
+            const loop = rafLoopRef.current;
+            if (loop) animationFrameRef.current = requestAnimationFrame(loop);
+        };
+
+        a.onpause = () => {
+            if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
+            setPlaybackState(s => s === 'playing' ? 'paused' : s);
+            cancelAnimationFrame(animationFrameRef.current);
+        };
+
         a.onended = () => {
-            // Cancel RAF unconditionally — onended never fires a pause event,
-            // so without this the loop leaks into the next sentence regardless
-            // of run state.
+            // Tear down handlers immediately — prevents stale handlers firing on next .src assignment
+            a.onended = null;
+            a.onerror = null;
+            a.onplaying = null;
+            a.onpause = null;
+            // Cancel RAF — onended does not fire onpause, so we must stop manually
             cancelAnimationFrame(animationFrameRef.current);
             if (isStoppedRef.current || runIdRef.current !== runIdAtStart) return;
             const tgap = nowMs();
@@ -590,9 +617,6 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
                     safeRevoke(currentObjectUrlRef.current);
                     currentObjectUrlRef.current = null;
                 }, 0);
-
-                a.onended = null;
-                a.onerror = null;
 
                 setPlaybackState("completed");
                 setCurrentSentenceIdx(-1);
@@ -618,7 +642,10 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         try {
             a.muted = false;
             a.volume = 1;
-            a.currentTime = 0;
+            // Note: do NOT set a.currentTime = 0 here — the browser resets the
+            // media position when .src is assigned. Calling currentTime=0 before
+            // the media is ready can trigger a spurious 'seeking' event that delays
+            // play() and causes a freeze on some browsers.
             inFlightPlayRef.current = a.play();
             await inFlightPlayRef.current;
             // Audio is now confirmed playing — update the visual highlight here, not before
@@ -695,17 +722,27 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
                 }
                 setPlaybackState("paused");
             }
-        } else {
+        } else if (playbackState === 'paused') {
+            // Resume: audio element still has the current sentence loaded
             const a = audioRef.current;
-            if (a?.src && a.paused && playbackState === 'paused') {
+            if (a?.src) {
                 a.play().catch((e: unknown) => {
-                    setPlaybackState("error");
+                    // Resume failed — restart from current position
+                    runIdRef.current += 1;
+                    isStoppedRef.current = false;
+                    setLastError(null);
+                    abortRef.current = new AbortController();
+                    const startIdx = currentSentenceIdx >= 0 ? currentSentenceIdx : 0;
+                    playIndex(startIdx, runIdRef.current).catch((err: unknown) => {
+                        setPlaybackState("error");
+                        setLastError(err instanceof Error ? err.message : String(err));
+                    });
                     const errName = e instanceof Error ? e.name : "Error";
                     const errMsg = e instanceof Error ? e.message : String(e);
-                    setLastError(`resume play() rejected: ${errName} ${errMsg}`);
-                    console.error("[PlayLearn] Resume rejected", e);
+                    console.error("[PlayLearn] Resume rejected, restarting from idx:", currentSentenceIdx, errName, errMsg);
                 });
             } else {
+                // No src — restart from current index
                 runIdRef.current += 1;
                 isStoppedRef.current = false;
                 setLastError(null);
@@ -716,6 +753,17 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
                     setLastError(e instanceof Error ? e.message : String(e));
                 });
             }
+        } else {
+            // idle, completed, or error — start/restart from beginning or current position
+            runIdRef.current += 1;
+            isStoppedRef.current = false;
+            setLastError(null);
+            abortRef.current = new AbortController();
+            const startIdx = playbackState === 'error' && currentSentenceIdx >= 0 ? currentSentenceIdx : 0;
+            playIndex(startIdx, runIdRef.current).catch((e: unknown) => {
+                setPlaybackState("error");
+                setLastError(e instanceof Error ? e.message : String(e));
+            });
         }
     };
 
@@ -745,6 +793,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
         stop();
         onBack();
     };
+
 
     const [isScrolled, setIsScrolled] = useState(false);
     const [theme, setTheme] = useState<'night' | 'light' | 'sepia' | 'forest'>('sepia');

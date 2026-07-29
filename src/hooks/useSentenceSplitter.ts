@@ -123,6 +123,10 @@ export function splitSentences(text: string): { original: string[]; spoken: stri
         for (const e of emails) {
             out = out.replaceAll(e.key, mode === "original" ? e.original : e.spoken);
         }
+        if (mode === "spoken") {
+            // Remove commas used as thousands separators so the TTS doesn't misinterpret them as decimals
+            out = out.replace(/(?<=\d),(?=\d{3}(?!\d))/g, '');
+        }
         return out;
     };
 

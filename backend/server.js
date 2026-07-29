@@ -74,7 +74,7 @@ const aiLimiter = rateLimit({
 });
 
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: process.env.NODE_ENV === 'production' ? (process.env.FRONTEND_URL || false) : ['http://localhost:5173', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -203,6 +203,60 @@ app.post('/api/sentences', (req, res) => {
     }
 });
 
+// ── Shared TTS helper ─────────────────────────────────────────────────────────
+// Resolves (or synthesises) the MP3 for a single sentence and returns the path
+// to the local cache file.  Used by both /api/tts and /api/download-audio.
+async function getOrCreateTtsFile(text, voice, lang) {
+    let finalVoice = voice;
+    if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
+        finalVoice = 'onyx';
+    }
+
+    const normalizedText = normalizeText(text, lang);
+
+    // Guard: normalizeText may strip all content (e.g. punctuation-only input)
+    if (!normalizedText || normalizedText.trim().length === 0) {
+        console.log('[TTS] Normalised text is empty — returning null');
+        return null;
+    }
+
+    const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
+    const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
+
+    // Remove corrupted files
+    if (fs.existsSync(cachePath)) {
+        const stat = fs.statSync(cachePath);
+        if (stat.size < 1000) {
+            console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
+            try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
+        }
+    }
+
+    if (!fs.existsSync(cachePath)) {
+        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) voice=${finalVoice}...`);
+        await waitForTtsSlot();
+        try {
+            const mp3 = await openai.audio.speech.create({
+                model: 'tts-1',
+                voice: finalVoice,
+                input: normalizedText,
+                response_format: 'mp3',
+            });
+            const buffer = Buffer.from(await mp3.arrayBuffer());
+            fs.writeFileSync(cachePath, buffer);
+            evictCacheIfNeeded();
+        } finally {
+            currentTtsJobs--;
+        }
+    } else {
+        console.log(`[TTS] Cache HIT (${normalizedText.length} chars)`);
+        const now = new Date();
+        try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
+    }
+
+    return cachePath;
+}
+
 app.post('/api/tts', ttsLimiter, async (req, res) => {
     try {
         const { text, voice = 'alloy', lang = 'en' } = req.body;
@@ -214,48 +268,9 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
             return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
         }
 
-        let finalVoice = voice;
-        if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
-            finalVoice = 'onyx';
-        }
-
-        const normalizedText = normalizeText(text, lang);
-
-        // Hash for cache key
-        const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
-        const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
-
-        let audioPath = cachePath;
-
-        if (fs.existsSync(cachePath)) {
-            const stat = fs.statSync(cachePath);
-            if (stat.size < 1000) {
-                console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
-                try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
-            }
-        }
-
-        if (!fs.existsSync(cachePath)) {
-            console.log(`[TTS] Cache MISS. Generating ${lang} audio for chunk (${normalizedText.length} chars) using voice ${finalVoice}...`);
-            await waitForTtsSlot();
-            try {
-                const mp3 = await openai.audio.speech.create({
-                    model: 'tts-1',
-                    voice: finalVoice,
-                    input: normalizedText,
-                    response_format: 'mp3',
-                });
-                const buffer = Buffer.from(await mp3.arrayBuffer());
-                fs.writeFileSync(cachePath, buffer);
-                evictCacheIfNeeded();
-            } finally {
-                currentTtsJobs--;
-            }
-        } else {
-            console.log(`[TTS] Cache HIT for chunk (${normalizedText.length} chars)`);
-            // Touch mtime so this file survives future LRU eviction
-            const now = new Date();
-            try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
+        const audioPath = await getOrCreateTtsFile(text, voice, lang);
+        if (!audioPath) {
+            return res.status(204).send(); // No content for empty strings
         }
 
         // --- HTTP range request stream ---
@@ -292,6 +307,94 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
         console.error('TTS Error:', error);
         res.status(500).json({ error: 'Failed to generate audio' });
     }
+});
+
+const downloadJobs = new Map();
+
+// ── Download full reading as MP3 ──────────────────────────────────────────────
+// POST /api/download-audio
+// Body: { sentences: string[], voice: string, lang: 'en' | 'fr' }
+// Returns: { jobId: string }
+app.post('/api/download-audio', ttsLimiter, (req, res) => {
+    const { sentences, voice = 'echo', lang = 'en' } = req.body;
+
+    if (!Array.isArray(sentences) || sentences.length === 0) {
+        return res.status(400).json({ error: 'sentences[] array is required.' });
+    }
+    if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
+    }
+
+    const jobId = crypto.randomUUID();
+    downloadJobs.set(jobId, { status: 'processing', progress: 0, total: sentences.length, buffer: null, error: null });
+
+    // Start background job
+    (async () => {
+        try {
+            console.log(`[Download Job ${jobId}] Compiling ${sentences.length} sentences into MP3 (voice=${voice}, lang=${lang})...`);
+            const buffers = [];
+            for (let i = 0; i < sentences.length; i++) {
+                const text = (sentences[i] || '').trim();
+                if (text) {
+                    const filePath = await getOrCreateTtsFile(text, voice, lang);
+                    if (filePath) {
+                        buffers.push(fs.readFileSync(filePath));
+                    }
+                }
+                const job = downloadJobs.get(jobId);
+                if (job) job.progress = i + 1;
+            }
+
+            const job = downloadJobs.get(jobId);
+            if (!job) return;
+
+            if (buffers.length === 0) {
+                job.status = 'error';
+                job.error = 'No valid sentences to compile.';
+                return;
+            }
+
+            job.buffer = Buffer.concat(buffers);
+            job.status = 'completed';
+            console.log(`[Download Job ${jobId}] Done — merged ${job.buffer.length} bytes.`);
+
+            // Clean up old jobs after 1 hour
+            setTimeout(() => downloadJobs.delete(jobId), 3600000);
+        } catch (error) {
+            console.error(`[Download Job ${jobId}] Error:`, error);
+            const job = downloadJobs.get(jobId);
+            if (job) {
+                job.status = 'error';
+                job.error = 'Failed to compile audio download.';
+            }
+        }
+    })();
+
+    res.json({ jobId });
+});
+
+// GET /api/download-audio/:jobId/status
+app.get('/api/download-audio/:jobId/status', (req, res) => {
+    const job = downloadJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({ status: job.status, progress: job.progress, total: job.total, error: job.error });
+});
+
+// GET /api/download-audio/:jobId/file
+app.get('/api/download-audio/:jobId/file', (req, res) => {
+    const job = downloadJobs.get(req.params.jobId);
+    if (!job || job.status !== 'completed' || !job.buffer) {
+        return res.status(404).json({ error: 'File not ready or job not found' });
+    }
+    res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': job.buffer.length,
+        'Content-Disposition': 'attachment; filename="alphie-reading.mp3"',
+        'Cache-Control': 'no-store',
+    });
+    res.send(job.buffer);
+    // Delete job after downloading to save memory
+    downloadJobs.delete(req.params.jobId);
 });
 
 const generateQuiz = async (req, res) => {
@@ -485,6 +588,6 @@ Scoring rules:
     }
 });
 
-app.listen(port, () => {
-    console.log(`Backend API running on http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Backend API running on http://0.0.0.0:${port}`);
 });
