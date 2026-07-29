@@ -6,6 +6,7 @@ import ReaderView from "./views/ReaderView";
 import QuizView from "./views/QuizView";
 import ArenaView from "./views/ArenaView";
 import LandingView from "./views/LandingView";
+import { apiFetch } from './lib/api';
 
 import './App.css';
 
@@ -20,7 +21,10 @@ function App() {
   const [readingMode, setReadingMode] = useState<'read' | 'learn'>('learn');
   const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
   const [prefetchedQuiz, setPrefetchedQuiz] = useState<PrefetchedQuiz | null>(null);
+  const [examMode, setExamMode] = useState(false);
   const [prewarmBlob, setPrewarmBlob] = useState<{ blob: Blob; voice: string; lang: string } | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfPageTexts, setPdfPageTexts] = useState<string[] | null>(null);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem('playlearn_theme') || 'sepia';
@@ -43,7 +47,7 @@ function App() {
     if (mode === 'learn') {
       const lang = language === 'french' ? 'fr' : 'en';
       setPrefetchedQuiz({ loading: true });
-      fetch(`${import.meta.env.VITE_API_URL}/api/quiz`, {
+      apiFetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, lang }),
@@ -56,7 +60,6 @@ function App() {
 
   const handleFinishReading = () => {
     if (readingMode === 'read') {
-      setContent('');
       setPrefetchedQuiz(null);
       setPrewarmBlob(null);
       setAppState('input');
@@ -65,10 +68,39 @@ function App() {
     }
   };
 
+  const handlePdfReady = (file: File | null, pageTexts: string[]) => {
+    setPdfFile(file);
+    setPdfPageTexts(file ? pageTexts : null);
+  };
+
+  const handleStartExam = async (text: string) => {
+    setExamMode(true);
+    setContent(text);
+    setPrefetchedQuiz({ loading: true });
+    setAppState('quiz');
+    try {
+      const res = await apiFetch('/api/parse-exam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Parse error ${res.status}`);
+      }
+      const data = await res.json();
+      setPrefetchedQuiz({ data, loading: false });
+    } catch (err) {
+      setPrefetchedQuiz({ error: err instanceof Error ? err.message : String(err), loading: false });
+    }
+  };
+
   const handleRestart = () => {
-    setContent('');
+    setExamMode(false);
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
+    setPdfFile(null);
+    setPdfPageTexts(null);
     setAppState('input');
   };
 
@@ -84,11 +116,17 @@ function App() {
   const handlePrewarm = (sentence0: string, voice: string, lang: string) => {
     setPrewarmBlob(null);
 
-    const promise = fetch(`${import.meta.env.VITE_API_URL}/api/tts`, {
+    const fetchPromise = apiFetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: sentence0, voice, lang }),
-    })
+    });
+
+    const timeoutPromise = new Promise<Response>((_, reject) =>
+      setTimeout(() => reject(new Error('Prewarm TTS request timed out')), 15000)
+    );
+
+    const promise = Promise.race([fetchPromise, timeoutPromise])
       .then(res => res.ok ? res.arrayBuffer() : Promise.reject())
       .then(buf => {
         if (buf.byteLength < 1000) {
@@ -109,8 +147,11 @@ function App() {
 
   const handleGoHome = () => {
     setContent('');
+    setExamMode(false);
     setPrefetchedQuiz(null);
     setPrewarmBlob(null);
+    setPdfFile(null);
+    setPdfPageTexts(null);
     prewarmPromiseRef.current = null;
     setAppState('input');
   };
@@ -139,7 +180,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <InputView onStart={handleStartReading} onArena={handleGoToArena} onPrewarm={handlePrewarm} />
+              <InputView onStart={handleStartReading} onExam={handleStartExam} onArena={handleGoToArena} onPrewarm={handlePrewarm} onPdfReady={handlePdfReady} initialContent={content} />
             </motion.div>
           )}
           {appState === 'reading' && (
@@ -150,7 +191,7 @@ function App() {
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             >
-              <ReaderView content={content} readingLanguage={readingLanguage} prewarmBlob={prewarmBlob} prewarmPromiseRef={prewarmPromiseRef} onFinish={handleFinishReading} onBack={() => { setPrefetchedQuiz(null); setPrewarmBlob(null); prewarmPromiseRef.current = null; setAppState('input'); }} />
+              <ReaderView content={content} readingLanguage={readingLanguage} prewarmBlob={prewarmBlob} prewarmPromiseRef={prewarmPromiseRef} pdfFile={pdfFile} pdfPageTexts={pdfPageTexts} onFinish={handleFinishReading} onBack={() => { setPrefetchedQuiz(null); setPrewarmBlob(null); prewarmPromiseRef.current = null; setPdfFile(null); setPdfPageTexts(null); setAppState('input'); }} />
             </motion.div>
           )}
           {appState === 'quiz' && (
@@ -165,6 +206,7 @@ function App() {
                 content={content}
                 lang={readingLanguage === 'french' ? 'fr' : 'en'}
                 prefetchedQuiz={prefetchedQuiz}
+                examMode={examMode}
                 onRestart={handleRestart}
                 onArena={handleGoToArena}
               />

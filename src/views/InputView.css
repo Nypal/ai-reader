@@ -579,6 +579,59 @@
     width: 100%;
     margin-top: 16px;
     animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+    display: flex;
+    gap: 12px;
+}
+
+.iv-download-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.iv-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    height: 100%;
+    min-height: 54px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.iv-download-btn:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    box-shadow: 0 4px 20px var(--accent-glow);
+    transform: translateY(-2px);
+}
+
+.iv-download-btn:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+.iv-download-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.iv-download-btn.loading {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.iv-download-error {
+    font-size: 14px;
+    cursor: default;
+    opacity: 0.85;
 }
 
 .iv-cta-btn {
@@ -917,4 +970,122 @@
     background: var(--accent-dim);
     border-color: var(--accent);
     color: var(--accent2);
+}
+
+/* ── PDF Zone ── */
+.iv-pdf-zone {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    border-radius: 14px;
+    border: 1.5px dashed var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    width: 100%;
+    max-width: 640px;
+    margin-top: 10px;
+}
+
+.iv-pdf-zone:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.iv-pdf-zone.dragging {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    transform: scale(1.01);
+}
+
+.iv-pdf-zone.loading {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.iv-pdf-zone-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.iv-pdf-zone-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.iv-pdf-zone-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-zone-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+}
+
+/* ── PDF Loaded Badge ── */
+.iv-pdf-loaded {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--accent);
+    background: var(--accent-dim);
+    width: 100%;
+    max-width: 640px;
+    margin-top: 10px;
+}
+
+.iv-pdf-loaded-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.iv-pdf-loaded-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.iv-pdf-loaded-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.iv-pdf-loaded-pages {
+    font-size: 11px;
+    color: var(--accent2);
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    font-family: var(--font-sans);
+}
+
+.iv-pdf-remove:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
 }

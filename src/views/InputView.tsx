@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
-import { CheckCircle2, XCircle, Loader2, Paperclip } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Paperclip, Download } from 'lucide-react';
 import { splitSentences } from '../hooks/useSentenceSplitter';
+import { apiFetch } from '../lib/api';
 import './InputView.css';
 
 interface InputViewProps {
     onStart: (text: string, mode: 'read' | 'learn', language: 'english' | 'french') => void;
+    onExam?: (text: string) => void;
     onArena?: () => void;
     onPrewarm?: (sentence0: string, voice: string, lang: string) => void;
+    onPdfReady?: (file: File | null, pageTexts: string[]) => void;
+    initialContent?: string;
 }
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -56,15 +60,20 @@ const initialTestState: SystemTestState = {
 
 // Removed local extractFirstSentence — we now use useSentenceSplitter directly
 
-export default function InputView({ onStart, onArena, onPrewarm }: InputViewProps) {
-    const [text, setText] = useState('');
+export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfReady, initialContent }: InputViewProps) {
+    const [text, setText] = useState(initialContent ?? '');
     const [isExtracting, setIsExtracting] = useState(false);
+    const [pdfFile, setPdfFile] = useState<File | null>(null);
+    const [pdfPageCount, setPdfPageCount] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
     const [readingLanguage, setReadingLanguage] = useState<'english' | 'french'>('english');
     const [voiceOpen, setVoiceOpen] = useState(false);
 
-    const [mode, setMode] = useState<'read' | 'learn'>(() =>
-        (localStorage.getItem('playlearn_mode') as 'read' | 'learn') || 'read'
-    );
+    const [mode, setMode] = useState<'read' | 'learn' | 'exam'>(() => {
+        const saved = localStorage.getItem('playlearn_mode');
+        if (saved === 'read' || saved === 'learn' || saved === 'exam') return saved;
+        return 'read';
+    });
 
     const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() =>
         (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo'
@@ -93,6 +102,67 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
     const voiceDropRef = useRef<HTMLDivElement>(null);
     const [testState, setTestState] = useState<SystemTestState>(initialTestState);
     const [showTests, setShowTests] = useState(false);
+
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadError, setDownloadError] = useState<string | null>(null);
+    const [downloadProgress, setDownloadProgress] = useState(0);
+    const [downloadTotal, setDownloadTotal] = useState(0);
+
+    const handleDownloadMp3 = async () => {
+        if (!text.trim() || isDownloading) return;
+        setIsDownloading(true);
+        setDownloadError(null);
+        setDownloadProgress(0);
+        setDownloadTotal(0);
+        try {
+            const lang = readingLanguage === 'french' ? 'fr' : 'en';
+            const { spoken } = splitSentences(text);
+            const res = await apiFetch('/api/download-audio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sentences: spoken, voice: selectedVoice, lang }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+                throw new Error(err.error ?? `HTTP ${res.status}`);
+            }
+
+            const { jobId } = await res.json();
+
+            while (true) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const statusRes = await apiFetch(`/api/download-audio/${jobId}/status`);
+                if (!statusRes.ok) throw new Error('Failed to fetch job status');
+                const statusData = await statusRes.json();
+
+                if (statusData.status === 'error') {
+                    throw new Error(statusData.error || 'Compilation failed');
+                }
+
+                setDownloadProgress(statusData.progress || 0);
+                setDownloadTotal(statusData.total || 0);
+
+                if (statusData.status === 'completed') {
+                    const downloadUrl = `${import.meta.env.VITE_API_URL || ''}/api/download-audio/${jobId}/file`;
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = 'alphie-reading.mp3';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    break;
+                }
+            }
+        } catch (e: unknown) {
+            setDownloadError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setIsDownloading(false);
+            setTimeout(() => {
+                setDownloadProgress(0);
+                setDownloadTotal(0);
+            }, 1000);
+        }
+    };
 
     useLayoutEffect(() => {
         const ref = readingLanguage === 'english' ? langEnRef : langFrRef;
@@ -125,7 +195,7 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
     const sentence0 = useMemo(() => spoken[0] || '', [spoken]);
 
     useEffect(() => {
-        if (!onPrewarm || !sentence0) return;
+        if (!onPrewarm || !sentence0 || mode === 'exam') return;
         const timer = setTimeout(() => {
             const { voice, lang } = prewarmRef.current;
             const key = `${sentence0}|${voice}|${lang}`;
@@ -134,9 +204,9 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
             onPrewarm(sentence0, voice, lang);
         }, 1500);
         return () => clearTimeout(timer);
-    }, [sentence0, selectedVoice, prewarmLang, onPrewarm]);
+    }, [sentence0, selectedVoice, prewarmLang, onPrewarm, mode]);
 
-    const handleModeSelect = (newMode: 'read' | 'learn') => {
+    const handleModeSelect = (newMode: 'read' | 'learn' | 'exam') => {
         setMode(newMode);
         localStorage.setItem('playlearn_mode', newMode);
     };
@@ -149,6 +219,10 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
 
     const handlePlay = (e: React.MouseEvent<HTMLButtonElement>) => {
         if (!text.trim()) return;
+        if (mode === 'exam') {
+            onExam?.(text);
+            return;
+        }
         // ripple
         const btn = e.currentTarget;
         const rect = btn.getBoundingClientRect();
@@ -197,19 +271,25 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
             const pdfjsLib = await import('pdfjs-dist');
             const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min?url');
             pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-            
+
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = '';
+            const pageTexts: string[] = [];
+
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items
                     .map((item) => ('str' in item ? (item as { str: string }).str : ''))
                     .join(' ');
-                fullText += pageText + '\n\n';
+                pageTexts.push(pageText);
             }
-            setText(fullText.trim());
+
+            const fullText = pageTexts.join('\n\n').trim();
+            setText(fullText);
+            setPdfFile(file);
+            setPdfPageCount(pdf.numPages);
+            onPdfReady?.(file, pageTexts);
         } catch (error) {
             console.error('Error extracting PDF:', error);
             alert('Failed to extract text from PDF.');
@@ -218,16 +298,61 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
         }
     };
 
+    const extractTextFromDocx = async (file: File) => {
+        try {
+            setIsExtracting(true);
+            const arrayBuffer = await file.arrayBuffer();
+            const mammoth = await import('mammoth');
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            setText(result.value);
+            // Hide the PDF view if it was active
+            setPdfFile(null);
+            setPdfPageCount(0);
+            onPdfReady?.(null, []);
+        } catch (error) {
+            console.error('Error extracting Word doc:', error);
+            alert('Failed to extract text from Word document.');
+        } finally {
+            setIsExtracting(false);
+        }
+    };
+
+    const removePdf = () => {
+        setPdfFile(null);
+        setPdfPageCount(0);
+        setText('');
+        onPdfReady?.(null, []);
+    };
+
+    const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        if (file.type === 'application/pdf') {
+            extractTextFromPdf(file);
+        } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            extractTextFromDocx(file);
+        } else if (file.type === 'text/plain') {
+            file.text().then(setText);
+        }
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.type === 'application/pdf') {
             extractTextFromPdf(file);
+        } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            extractTextFromDocx(file);
         } else if (file.type === 'text/plain') {
             const t = await file.text();
             setText(t);
         } else {
-            alert('Please upload a PDF or TXT file.');
+            alert('Please upload a PDF, Word (.docx), or TXT file.');
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -238,7 +363,7 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
         setShowTests(true);
         setTestState({ ...initialTestState, backend: { status: 'running' } });
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/health`);
+            const res = await apiFetch('/api/health');
             if (!res.ok) throw new Error('Bad response');
             const data = await res.json();
             setTestState(prev => ({ ...prev, backend: { status: 'pass' }, openai: { status: 'running' } }));
@@ -252,9 +377,9 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
             setTestState(prev => ({ ...prev, backend: { status: 'fail', error: errorMessage, fix: 'Run `node server.js` in the backend folder.' }, logMessage: errorMessage }));
             return;
         }
-        let audioBlobUrl = '';
+        let audioBlobUrl: string;
         try {
-            const ttsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy', lang: 'en' }) });
+            const ttsRes = await apiFetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Test one two', voice: 'alloy', lang: 'en' }) });
             if (!ttsRes.ok) { const e = await ttsRes.json().catch(() => ({})); throw new Error(e.error || `HTTP ${ttsRes.status}`); }
             const blob = await ttsRes.blob();
             if (blob.size === 0) throw new Error('Empty audio buffer');
@@ -286,7 +411,9 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
 
     const wordCount = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
     const hasText = text.trim().length > 0;
-    const ctaLabel = hasText ? (mode === 'read' ? 'Start Reading' : 'Play & Learn') : 'Paste text to begin';
+    const ctaLabel = hasText
+        ? (mode === 'exam' ? 'Practice Test' : mode === 'read' ? 'Start Reading' : 'Play & Learn')
+        : (mode === 'exam' ? 'Paste exam questions to begin' : 'Paste text to begin');
     const currentVoice = TTS_VOICES.find(v => v.id === selectedVoice)!;
 
     return (
@@ -340,7 +467,7 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
                                 className="iv-upload-pill"
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={isExtracting}
-                                aria-label="Upload PDF or TXT"
+                                aria-label="Upload PDF, Word, or TXT"
                             >
                                 {isExtracting
                                     ? <Loader2 size={13} className="spin-icon" />
@@ -356,11 +483,48 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
                         type="file"
                         ref={fileInputRef}
                         onChange={handleFileUpload}
-                        accept=".txt,.pdf"
+                        accept=".txt,.pdf,.docx"
                         aria-label="Upload file"
                         style={{ display: 'none' }}
                     />
                 </div>
+
+                {/* ── PDF Zone ── */}
+                {!pdfFile ? (
+                    <div
+                        className={`iv-pdf-zone ${isDragging ? 'dragging' : ''} ${isExtracting ? 'loading' : ''}`}
+                        onClick={() => !isExtracting && fileInputRef.current?.click()}
+                        onDragEnter={handleDragEnter}
+                        onDragLeave={handleDragLeave}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Upload PDF"
+                        onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+                    >
+                        <span className="iv-pdf-zone-icon">
+                            {isExtracting ? '⏳' : isDragging ? '📥' : '📄'}
+                        </span>
+                        <div className="iv-pdf-zone-text">
+                            <span className="iv-pdf-zone-title">
+                                {isExtracting ? 'Extracting text…' : isDragging ? 'Drop your file' : 'Upload a file'}
+                            </span>
+                            <span className="iv-pdf-zone-sub">
+                                {isExtracting ? 'Please wait' : mode === 'exam' ? 'All questions parsed automatically' : 'PDF or Word (.docx)'}
+                            </span>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="iv-pdf-loaded">
+                        <span className="iv-pdf-loaded-icon">📄</span>
+                        <div className="iv-pdf-loaded-info">
+                            <span className="iv-pdf-loaded-name">{pdfFile.name}</span>
+                            <span className="iv-pdf-loaded-pages">{pdfPageCount} pages · PDF view enabled</span>
+                        </div>
+                        <button className="iv-pdf-remove" onClick={removePdf} aria-label="Remove PDF" title="Remove PDF">✕</button>
+                    </div>
+                )}
 
                 {/* ── Controls row: Mode | Voice | Lang ── */}
                 <div className="iv-controls">
@@ -375,6 +539,10 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
                             className={`iv-mode-btn ${mode === 'learn' ? 'active' : ''}`}
                             onClick={() => handleModeSelect('learn')}
                         >Learn</button>
+                        <button
+                            className={`iv-mode-btn ${mode === 'exam' ? 'active' : ''}`}
+                            onClick={() => handleModeSelect('exam')}
+                        >Exam</button>
                     </div>
 
                     {/* Voice dropdown pill */}
@@ -454,11 +622,39 @@ export default function InputView({ onStart, onArena, onPrewarm }: InputViewProp
                         <span className="iv-cta-icon">{hasText ? '▶' : '✦'}</span>
                         <span>{ctaLabel}</span>
                     </button>
+                    {hasText && mode !== 'exam' && (
+                        <div className="iv-download-wrap">
+                            <button
+                                className={`iv-download-btn ${isDownloading ? 'loading' : ''}`}
+                                onClick={handleDownloadMp3}
+                                disabled={isDownloading || isExtracting}
+                                aria-label="Download MP3"
+                                title="Download reading as MP3"
+                                style={isDownloading && downloadTotal > 0 ? {
+                                    background: `linear-gradient(90deg, var(--accent-glow) ${(downloadProgress / downloadTotal) * 100}%, var(--surface) ${(downloadProgress / downloadTotal) * 100}%)`
+                                } : {}}
+                            >
+                                {isDownloading ? (
+                                    <>
+                                        <Loader2 size={16} className="spin-icon" style={{ marginRight: '6px' }} />
+                                        <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                                            {downloadTotal > 0 ? `${Math.round((downloadProgress / downloadTotal) * 100)}%` : 'Wait...'}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <Download size={18} />
+                                )}
+                            </button>
+                            {downloadError && <span className="iv-download-error" title={downloadError}>⚠️</span>}
+                        </div>
+                    )}
                 </div>
 
                 {/* ── Hint ── */}
-                <p className={`iv-hint ${mode === 'learn' ? 'show' : ''}`}>
-                    Learn mode runs a quiz and Feynman Test after reading
+                <p className={`iv-hint ${mode !== 'read' ? 'show' : ''}`}>
+                    {mode === 'exam'
+                        ? 'Paste questions or upload a PDF — answer key optional, AI knows CompTIA answers'
+                        : 'Learn mode runs a quiz and open question after reading'}
                 </p>
 
             </div>

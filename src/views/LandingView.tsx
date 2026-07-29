@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { apiFetch } from '../lib/api';
 import './LandingView.css';
 
 interface LandingViewProps {
@@ -72,7 +73,7 @@ export default function LandingView({ onOpenApp }: LandingViewProps) {
         setDemoPlaying(false);
 
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/tts`, {
+            const response = await apiFetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: demoText, voice: 'onyx', lang: 'en' })

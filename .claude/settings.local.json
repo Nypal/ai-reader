@@ -10,7 +10,19 @@
       "Bash(npm run:*)",
       "Bash(netstat:*)",
       "Bash(start:*)",
-      "Bash(npx serve:*)"
+      "Bash(npx serve:*)",
+      "WebSearch",
+      "Bash(awk '{print $5}')",
+      "Bash(kill -9 49380)",
+      "PowerShell(Stop-Process -Id 49380 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 49380 -ErrorAction SilentlyContinue)",
+      "PowerShell($pids = \\(netstat -ano | Select-String \":3001\\\\s\" | ForEach-Object { \\($_ -split \"\\\\s+\"\\)[-1] } | Sort-Object -Unique\\); foreach \\($p in $pids\\) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 800; netstat -ano | Select-String \":3001\")",
+      "PowerShell(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\nyobe\\\\.gemini\\\\antigravity\\\\scratch\\\\ai-reader\\\\backend\" -WindowStyle Hidden)",
+      "PowerShell(curl.exe -s http://localhost:3001/api/health)",
+      "PowerShell(curl.exe -s -X POST http://localhost:3001/api/parse-exam -H \"Content-Type: application/json\" -d '{\"text\":\"Q1. What color is the sky? A. Red B. Blue C. Green D. Yellow Answer: B\"}')",
+      "PowerShell($pids = \\(netstat -ano | Select-String \":3001\\\\s\" | ForEach-Object { \\($_ -split \"\\\\s+\"\\)[-1] } | Sort-Object -Unique\\); foreach \\($p in $pids\\) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500; Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\nyobe\\\\.gemini\\\\antigravity\\\\scratch\\\\ai-reader\\\\backend\" -WindowStyle Hidden; Start-Sleep -Seconds 2; curl.exe -s http://localhost:3001/api/health)",
+      "PowerShell($pids = \\(netstat -ano | Select-String \":3001\\\\s\" | ForEach-Object { \\($_ -split \"\\\\s+\"\\)[-1] } | Sort-Object -Unique\\); foreach \\($p in $pids\\) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue })",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500; Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"c:\\\\Users\\\\nyobe\\\\.gemini\\\\antigravity\\\\scratch\\\\ai-reader\\\\backend\" -WindowStyle Hidden; Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri \"http://localhost:3001/api/health\" -UseBasicParsing -TimeoutSec 5; \"Backend OK: $\\($r.Content\\)\" } catch { \"Backend not responding: $_\" })"
     ]
   }
 }

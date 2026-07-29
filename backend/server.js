@@ -26,9 +26,21 @@ if (!process.env.TTS_CACHE_DIR && process.env.NODE_ENV === 'production') {
     console.warn('[TTS Cache] WARNING: TTS_CACHE_DIR is not set. Cache will be lost on redeploy. Set TTS_CACHE_DIR to a persistent volume path.');
 }
 
+function readPositiveIntEnv(name, fallback) {
+    const value = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 // LRU disk cache eviction — keep at most MAX_CACHE_FILES MP3s.
 // mtime is used as the LRU timestamp; cache hits touch the file to keep it fresh.
-const MAX_CACHE_FILES = parseInt(process.env.TTS_CACHE_MAX_FILES || '500', 10);
+const MAX_CACHE_FILES = readPositiveIntEnv('TTS_CACHE_MAX_FILES', 500);
+const MAX_TTS_TEXT_CHARS = readPositiveIntEnv('TTS_MAX_TEXT_CHARS', 5000);
+const MAX_DOWNLOAD_SENTENCES = readPositiveIntEnv('TTS_DOWNLOAD_MAX_SENTENCES', 120);
+const MAX_DOWNLOAD_TOTAL_CHARS = readPositiveIntEnv('TTS_DOWNLOAD_MAX_TOTAL_CHARS', 30000);
+const MAX_DOWNLOAD_JOBS = readPositiveIntEnv('TTS_DOWNLOAD_MAX_JOBS', 3);
+const MAX_EXAM_TEXT_CHARS = readPositiveIntEnv('EXAM_PARSE_MAX_TEXT_CHARS', 75000);
+const MAX_EXAM_CHUNKS = readPositiveIntEnv('EXAM_PARSE_MAX_CHUNKS', 8);
+const MAX_EXAM_CONCURRENT_CHUNKS = readPositiveIntEnv('EXAM_PARSE_CONCURRENCY', 2);
 
 function evictCacheIfNeeded() {
     const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.mp3'));
@@ -74,12 +86,21 @@ const aiLimiter = rateLimit({
 });
 
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: process.env.NODE_ENV === 'production' ? (process.env.FRONTEND_URL || false) : ['http://localhost:5173', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '5mb' }));
 app.use(globalLimiter);
+
+// API key auth — enforced only when API_SECRET env var is set (skipped in local dev)
+app.use((req, res, next) => {
+    const secret = process.env.API_SECRET;
+    if (!secret || req.path === '/api/health') return next();
+    const token = (req.headers['authorization'] || '').replace('Bearer ', '');
+    if (token !== secret) return res.status(401).json({ error: 'Unauthorized' });
+    next();
+});
 
 // Initialize Clients
 const openai = new OpenAI({
@@ -194,59 +215,74 @@ app.post('/api/sentences', (req, res) => {
     }
 });
 
+// ── Shared TTS helper ─────────────────────────────────────────────────────────
+// Resolves (or synthesises) the MP3 for a single sentence and returns the path
+// to the local cache file.  Used by both /api/tts and /api/download-audio.
+async function getOrCreateTtsFile(text, voice, lang) {
+    let finalVoice = voice;
+    if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
+        finalVoice = 'onyx';
+    }
+
+    const normalizedText = normalizeText(text, lang);
+
+    // Guard: normalizeText may strip all content (e.g. punctuation-only input)
+    if (!normalizedText || normalizedText.trim().length === 0) {
+        console.log('[TTS] Normalised text is empty — returning null');
+        return null;
+    }
+
+    const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
+    const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
+
+    // Remove corrupted files
+    if (fs.existsSync(cachePath)) {
+        const stat = fs.statSync(cachePath);
+        if (stat.size < 1000) {
+            console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
+            try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
+        }
+    }
+
+    if (!fs.existsSync(cachePath)) {
+        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) voice=${finalVoice}...`);
+        await waitForTtsSlot();
+        try {
+            const mp3 = await openai.audio.speech.create({
+                model: 'tts-1',
+                voice: finalVoice,
+                input: normalizedText,
+                response_format: 'mp3',
+            });
+            const buffer = Buffer.from(await mp3.arrayBuffer());
+            fs.writeFileSync(cachePath, buffer);
+            evictCacheIfNeeded();
+        } finally {
+            currentTtsJobs--;
+        }
+    } else {
+        console.log(`[TTS] Cache HIT (${normalizedText.length} chars)`);
+        const now = new Date();
+        try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
+    }
+
+    return cachePath;
+}
+
 app.post('/api/tts', ttsLimiter, async (req, res) => {
     try {
         const { text, voice = 'alloy', lang = 'en' } = req.body;
 
         if (!text) return res.status(400).json({ error: 'Text is required' });
-        if (text.length > 5000) return res.status(400).json({ error: 'Text exceeds 5000 characters. Please chunk it.' });
+        if (text.length > MAX_TTS_TEXT_CHARS) return res.status(400).json({ error: `Text exceeds ${MAX_TTS_TEXT_CHARS} characters. Please chunk it.` });
 
         if (!process.env.OPENAI_API_KEY) {
             return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
         }
 
-        let finalVoice = voice;
-        if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
-            finalVoice = 'onyx';
-        }
-
-        const normalizedText = normalizeText(text, lang);
-
-        // Hash for cache key
-        const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
-        const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
-
-        let audioPath = cachePath;
-
-        if (fs.existsSync(cachePath)) {
-            const stat = fs.statSync(cachePath);
-            if (stat.size < 1000) {
-                console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
-                try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
-            }
-        }
-
-        if (!fs.existsSync(cachePath)) {
-            console.log(`[TTS] Cache MISS. Generating ${lang} audio for chunk (${normalizedText.length} chars) using voice ${finalVoice}...`);
-            await waitForTtsSlot();
-            try {
-                const mp3 = await openai.audio.speech.create({
-                    model: 'tts-1',
-                    voice: finalVoice,
-                    input: normalizedText,
-                    response_format: 'mp3',
-                });
-                const buffer = Buffer.from(await mp3.arrayBuffer());
-                fs.writeFileSync(cachePath, buffer);
-                evictCacheIfNeeded();
-            } finally {
-                currentTtsJobs--;
-            }
-        } else {
-            console.log(`[TTS] Cache HIT for chunk (${normalizedText.length} chars)`);
-            // Touch mtime so this file survives future LRU eviction
-            const now = new Date();
-            try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
+        const audioPath = await getOrCreateTtsFile(text, voice, lang);
+        if (!audioPath) {
+            return res.status(204).send(); // No content for empty strings
         }
 
         // --- HTTP range request stream ---
@@ -283,6 +319,110 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
         console.error('TTS Error:', error);
         res.status(500).json({ error: 'Failed to generate audio' });
     }
+});
+
+const downloadJobs = new Map();
+
+// ── Download full reading as MP3 ──────────────────────────────────────────────
+// POST /api/download-audio
+// Body: { sentences: string[], voice: string, lang: 'en' | 'fr' }
+// Returns: { jobId: string }
+app.post('/api/download-audio', ttsLimiter, (req, res) => {
+    const { sentences, voice = 'echo', lang = 'en' } = req.body;
+
+    if (!Array.isArray(sentences) || sentences.length === 0) {
+        return res.status(400).json({ error: 'sentences[] array is required.' });
+    }
+    const normalizedSentences = sentences
+        .map(sentence => String(sentence || '').trim())
+        .filter(Boolean);
+    if (normalizedSentences.length === 0) {
+        return res.status(400).json({ error: 'At least one non-empty sentence is required.' });
+    }
+    if (normalizedSentences.length > MAX_DOWNLOAD_SENTENCES) {
+        return res.status(400).json({ error: `Download is limited to ${MAX_DOWNLOAD_SENTENCES} sentences per request.` });
+    }
+    if (normalizedSentences.some(sentence => sentence.length > MAX_TTS_TEXT_CHARS)) {
+        return res.status(400).json({ error: `Each sentence must be ${MAX_TTS_TEXT_CHARS} characters or fewer.` });
+    }
+    const totalChars = normalizedSentences.reduce((sum, sentence) => sum + sentence.length, 0);
+    if (totalChars > MAX_DOWNLOAD_TOTAL_CHARS) {
+        return res.status(400).json({ error: `Download text exceeds ${MAX_DOWNLOAD_TOTAL_CHARS} total characters.` });
+    }
+    const activeDownloadJobs = Array.from(downloadJobs.values()).filter(job => job.status === 'processing').length;
+    if (activeDownloadJobs >= MAX_DOWNLOAD_JOBS) {
+        return res.status(429).json({ error: 'Too many audio downloads are already processing. Please try again shortly.' });
+    }
+    if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
+    }
+
+    const jobId = crypto.randomUUID();
+    downloadJobs.set(jobId, { status: 'processing', progress: 0, total: normalizedSentences.length, buffer: null, error: null });
+    setTimeout(() => downloadJobs.delete(jobId), 3600000);
+
+    // Start background job
+    (async () => {
+        try {
+            console.log(`[Download Job ${jobId}] Compiling ${normalizedSentences.length} sentences into MP3 (voice=${voice}, lang=${lang})...`);
+            const buffers = [];
+            for (let i = 0; i < normalizedSentences.length; i++) {
+                const text = normalizedSentences[i];
+                const filePath = await getOrCreateTtsFile(text, voice, lang);
+                if (filePath) {
+                    buffers.push(fs.readFileSync(filePath));
+                }
+                const job = downloadJobs.get(jobId);
+                if (job) job.progress = i + 1;
+            }
+
+            const job = downloadJobs.get(jobId);
+            if (!job) return;
+
+            if (buffers.length === 0) {
+                job.status = 'error';
+                job.error = 'No valid sentences to compile.';
+                return;
+            }
+
+            job.buffer = Buffer.concat(buffers);
+            job.status = 'completed';
+            console.log(`[Download Job ${jobId}] Done — merged ${job.buffer.length} bytes.`);
+        } catch (error) {
+            console.error(`[Download Job ${jobId}] Error:`, error);
+            const job = downloadJobs.get(jobId);
+            if (job) {
+                job.status = 'error';
+                job.error = 'Failed to compile audio download.';
+            }
+        }
+    })();
+
+    res.json({ jobId });
+});
+
+// GET /api/download-audio/:jobId/status
+app.get('/api/download-audio/:jobId/status', (req, res) => {
+    const job = downloadJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({ status: job.status, progress: job.progress, total: job.total, error: job.error });
+});
+
+// GET /api/download-audio/:jobId/file
+app.get('/api/download-audio/:jobId/file', (req, res) => {
+    const job = downloadJobs.get(req.params.jobId);
+    if (!job || job.status !== 'completed' || !job.buffer) {
+        return res.status(404).json({ error: 'File not ready or job not found' });
+    }
+    res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': job.buffer.length,
+        'Content-Disposition': 'attachment; filename="alphie-reading.mp3"',
+        'Cache-Control': 'no-store',
+    });
+    res.send(job.buffer);
+    // Delete job after downloading to save memory
+    downloadJobs.delete(req.params.jobId);
 });
 
 const generateQuiz = async (req, res) => {
@@ -327,6 +467,115 @@ Schema: {"questions":[{"type":"main|detail|apply","question":"...","options":["o
 
 app.post('/api/quiz', aiLimiter, generateQuiz);
 app.post('/api/questions', aiLimiter, generateQuiz);
+
+// Split large exam text into chunks at question boundaries to stay within max_tokens.
+function splitExamText(text) {
+    const MAX_CHUNK = 12000; // characters per chunk
+    if (text.length <= MAX_CHUNK) return [text];
+
+    const chunks = [];
+    let start = 0;
+
+    while (start < text.length) {
+        let end = Math.min(start + MAX_CHUNK, text.length);
+
+        if (end < text.length) {
+            // Look back up to 2500 chars for a question number boundary
+            const lookbackStart = Math.max(start, end - 2500);
+            const segment = text.slice(lookbackStart, end);
+            // Match patterns: "A6. ", "A7. ", "12. A", "Q12. " etc.
+            const matches = [...segment.matchAll(/[A-Z]\d+\.\s|(?<!\d)\d{1,3}\.\s+[A-Z]/g)];
+            if (matches.length > 0) {
+                end = lookbackStart + matches[matches.length - 1].index;
+            }
+        }
+
+        const chunk = text.slice(start, end).trim();
+        if (chunk.length > 50) chunks.push(chunk);
+        start = end;
+    }
+
+    return chunks;
+}
+
+const EXAM_CHUNK_SYSTEM_PROMPT = `You are an exam parser. Extract EVERY multiple-choice question from the provided text — do not skip any.
+
+Rules:
+- Include only questions that have explicit answer choices (A/B/C/D or labeled options).
+- Strip letter prefixes (A., B., C., etc.) from option text — keep only the content.
+- correctAnswerIndex is 0-based (0=A, 1=B, 2=C, 3=D, 4=E, 5=F).
+- If an answer key is present in the text (e.g. "A6: B" or "1. B  2. C  3. A..."), use it.
+- If NO answer key appears, use your training knowledge (especially for CompTIA, Cisco, Microsoft exams).
+- explanation: one short sentence (max 12 words) saying why the answer is correct.
+- type: always "exam".
+
+MULTI-SELECT questions (those with "Pick TWO", "Select TWO", "Choose TWO", "(Select TWO)", etc.):
+- Set requiredSelections to the stated count (usually 2).
+- Set correctAnswerIndices to an array of ALL correct 0-based option indices, e.g. [0, 2].
+- Set correctAnswerIndex to the first correct index (backward compat).
+- Set examExplanation fields to empty strings "".
+
+SINGLE-SELECT questions (all others):
+- Set requiredSelections: 1.
+- Set correctAnswerIndices: [correctAnswerIndex].
+- examExplanation — identify the most tempting wrong answer:
+  - bestNow: max 12 words — why the symptom points to the correct answer; avoid "resolves the issue"
+  - notLabel: 1-3 words for the most tempting wrong option (no letter prefix)
+  - notReason: max 12 words — why that wrong answer fits less given the symptom
+
+Return ONLY valid JSON:
+{"questions":[{"type":"exam","question":"...","options":["...","...","...","..."],"correctAnswerIndex":2,"correctAnswerIndices":[2],"requiredSelections":1,"explanation":"...","examExplanation":{"bestNow":"...","notLabel":"...","notReason":"..."}}]}`;
+
+async function parseExamChunk(chunkText, openai) {
+    const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 8000,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+            { role: 'system', content: EXAM_CHUNK_SYSTEM_PROMPT },
+            { role: 'user', content: chunkText },
+        ],
+    });
+
+    const parsed = JSON.parse(completion.choices[0].message.content);
+    return Array.isArray(parsed.questions) ? parsed.questions : [];
+}
+
+app.post('/api/parse-exam', aiLimiter, async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+        if (text.length > MAX_EXAM_TEXT_CHARS) {
+            return res.status(400).json({ error: `Exam text exceeds ${MAX_EXAM_TEXT_CHARS} characters.` });
+        }
+        if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
+
+        const chunks = splitExamText(text);
+        if (chunks.length > MAX_EXAM_CHUNKS) {
+            return res.status(400).json({ error: `Exam parse is limited to ${MAX_EXAM_CHUNKS} chunks per request.` });
+        }
+        console.log(`[ParseExam] Parsing ${text.length} chars across ${chunks.length} chunk(s)...`);
+
+        const chunkResults = [];
+        for (let i = 0; i < chunks.length; i += MAX_EXAM_CONCURRENT_CHUNKS) {
+            const batch = chunks.slice(i, i + MAX_EXAM_CONCURRENT_CHUNKS);
+            const batchResults = await Promise.all(batch.map(chunk => parseExamChunk(chunk, openai)));
+            chunkResults.push(...batchResults);
+        }
+        const allQuestions = chunkResults.flat();
+
+        if (allQuestions.length === 0) {
+            return res.status(422).json({ error: 'No multiple-choice questions found. Make sure to include answer choices (A, B, C, D) with your questions.' });
+        }
+
+        console.log(`[ParseExam] Extracted ${allQuestions.length} questions from ${chunks.length} chunk(s).`);
+        res.json({ questions: allQuestions });
+    } catch (error) {
+        console.error('ParseExam Error:', error);
+        res.status(500).json({ error: 'Failed to parse exam questions.' });
+    }
+});
 
 app.post('/api/evaluate', aiLimiter, async (req, res) => {
     try {
@@ -378,6 +627,6 @@ Scoring rules:
     }
 });
 
-app.listen(port, () => {
-    console.log(`Backend API running on http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Backend API running on http://0.0.0.0:${port}`);
 });
