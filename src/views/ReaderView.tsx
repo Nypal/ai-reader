@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, SkipBack, SkipForward, Play, Pause } from 'lucide-react';
 import { useSentenceSplitter } from '../hooks/useSentenceSplitter';
 import { AuditService } from '../services/AuditService';
+import { useAzureVoices } from '../hooks/useAzureVoices';
 import { apiFetch } from '../lib/api';
+import { findVoice, getEffectiveVoiceId, getVoiceOptions } from '../lib/voices';
 import './ReaderView.css';
 
 interface ReaderViewProps {
@@ -138,8 +140,6 @@ type CacheItem = {
     createdAt: number;
 };
 
-type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-
 const MAX_CACHE = 6;
 
 function nowMs() {
@@ -187,9 +187,12 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
     const [currentSentenceIdx, setCurrentSentenceIdx] = useState(-1);
     const [speed, setSpeed] = useState(1);
     const [lastError, setLastError] = useState<string | null>(null);
-    const [voiceUI, setVoiceUI] = useState<TTSVoice>(() => {
-        return (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo';
-    });
+    const isAzureAvailable = useAzureVoices();
+    const voiceLang = readingLanguage === 'french' ? 'fr' : 'en';
+    const [voiceUI, setVoiceUI] = useState<string>(() =>
+        getEffectiveVoiceId(localStorage.getItem('playlearn_voice'), voiceLang, isAzureAvailable)
+    );
+    const voiceOptions = getVoiceOptions(isAzureAvailable === true, voiceLang);
     const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
     const handleSpeedToggle = () => {
         const nextIdx = (SPEEDS.indexOf(speed) + 1) % SPEEDS.length;
@@ -207,7 +210,17 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
     const currentObjectUrlRef = useRef<string | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const inFlightPlayRef = useRef<Promise<void> | null>(null);
-    const voiceRef = useRef<TTSVoice>(voiceUI);
+    const voiceRef = useRef<string>(voiceUI);
+
+    // Once Azure availability is known, apply the language default (or drop an
+    // Azure voice that can't be served).
+    useEffect(() => {
+        const effective = getEffectiveVoiceId(localStorage.getItem('playlearn_voice'), voiceLang, isAzureAvailable);
+        if (effective !== voiceRef.current) {
+            voiceRef.current = effective;
+            setVoiceUI(effective);
+        }
+    }, [isAzureAvailable, voiceLang]);
 
     const [sentenceProgress, setSentenceProgress] = useState(0);
     const animationFrameRef = useRef<number>(0);
@@ -243,7 +256,7 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
 
     const currentPage = currentSentenceIdx >= 0 ? (sentencePageMap[currentSentenceIdx] ?? 0) : 0;
 
-    const handleVoiceChange = (newVoice: TTSVoice) => {
+    const handleVoiceChange = (newVoice: string) => {
         if (newVoice === voiceUI) return;
         setVoiceUI(newVoice);
         voiceRef.current = newVoice;
@@ -945,11 +958,11 @@ export default function ReaderView({ content, readingLanguage, onFinish, onBack,
                 <div className={`p-wave ${playbackState === 'playing' ? 'playing' : ''}`}>
                     <div className="pw" /><div className="pw" /><div className="pw" /><div className="pw" />
                 </div>
-                {voiceUI}
+                {findVoice(voiceUI)?.name ?? voiceUI}
                 <div className={`p-voice-dropdown ${isDropdownOpen ? 'open' : ''}`}>
-                    {(['onyx', 'echo', 'fable', 'nova', 'shimmer', 'alloy'] as TTSVoice[]).map(v => (
-                        <div key={v} className={`p-vopt ${voiceUI === v ? 'sel' : ''}`} onClick={(e) => { e.stopPropagation(); handleVoiceChange(v); setIsDropdownOpen(false); }}>
-                            {v}
+                    {voiceOptions.map(v => (
+                        <div key={v.id} className={`p-vopt ${voiceUI === v.id ? 'sel' : ''}`} onClick={(e) => { e.stopPropagation(); handleVoiceChange(v.id); setIsDropdownOpen(false); }}>
+                            {v.name}
                         </div>
                     ))}
                 </div>

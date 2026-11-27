@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Loader2, Paperclip, Download } from 'lucide-react';
 import { splitSentences } from '../hooks/useSentenceSplitter';
+import { useAzureVoices } from '../hooks/useAzureVoices';
 import { apiFetch } from '../lib/api';
+import { OPENAI_VOICES, findVoice, getEffectiveVoiceId, getVoiceOptions } from '../lib/voices';
 import './InputView.css';
 
 interface InputViewProps {
@@ -15,17 +17,6 @@ interface InputViewProps {
 
 type TestStatus = 'idle' | 'running' | 'pass' | 'fail';
 type AppTheme = 'night' | 'light' | 'sepia' | 'forest';
-
-const TTS_VOICES = [
-    { id: 'onyx', name: 'Onyx', desc: 'Deep · Authoritative' },
-    { id: 'echo', name: 'Echo', desc: 'Calm · Precise' },
-    { id: 'fable', name: 'Fable', desc: 'Warm · Storytelling' },
-    { id: 'nova', name: 'Nova', desc: 'Clear · Friendly' },
-    { id: 'shimmer', name: 'Shimmer', desc: 'Soft · Gentle' },
-    { id: 'alloy', name: 'Alloy', desc: 'Neutral · Balanced' },
-] as const;
-
-type TTSVoice = typeof TTS_VOICES[number]['id'];
 
 const THEMES: { id: AppTheme; label: string; dot: string }[] = [
     { id: 'night', label: 'Night', dot: '#0D0D1A' },
@@ -75,9 +66,14 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
         return 'read';
     });
 
-    const [selectedVoice, setSelectedVoice] = useState<TTSVoice>(() =>
-        (localStorage.getItem('playlearn_voice') as TTSVoice) || 'echo'
+    const isAzureAvailable = useAzureVoices();
+    // null = the reader never picked a voice, so the language default applies (Vivienne in French).
+    const [storedVoice, setSelectedVoice] = useState<string | null>(() =>
+        localStorage.getItem('playlearn_voice')
     );
+    const voiceLang = readingLanguage === 'french' ? 'fr' : 'en';
+    const selectedVoice = getEffectiveVoiceId(storedVoice, voiceLang, isAzureAvailable);
+    const voiceOptions = getVoiceOptions(isAzureAvailable === true, voiceLang);
 
     const [theme, setThemeState] = useState<AppTheme>(() => {
         const saved = localStorage.getItem('playlearn_theme') as AppTheme | null;
@@ -211,7 +207,7 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
         localStorage.setItem('playlearn_mode', newMode);
     };
 
-    const handleVoiceSelect = (voiceId: TTSVoice) => {
+    const handleVoiceSelect = (voiceId: string) => {
         setSelectedVoice(voiceId);
         localStorage.setItem('playlearn_voice', voiceId);
         setVoiceOpen(false);
@@ -414,7 +410,7 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
     const ctaLabel = hasText
         ? (mode === 'exam' ? 'Practice Test' : mode === 'read' ? 'Start Reading' : 'Play & Learn')
         : (mode === 'exam' ? 'Paste exam questions to begin' : 'Paste text to begin');
-    const currentVoice = TTS_VOICES.find(v => v.id === selectedVoice)!;
+    const currentVoice = findVoice(selectedVoice) ?? OPENAI_VOICES[1];
 
     return (
         <div className="iv-page">
@@ -565,7 +561,7 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
 
                         {/* Floating dropdown */}
                         <div className={`iv-voice-dropdown ${voiceOpen ? 'open' : ''}`} role="listbox">
-                            {TTS_VOICES.map(v => (
+                            {voiceOptions.map(v => (
                                 <button
                                     key={v.id}
                                     className={`iv-vopt ${selectedVoice === v.id ? 'sel' : ''}`}
