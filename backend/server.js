@@ -95,6 +95,25 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || 'dummy_key',
 });
 
+// ── TTS model & narration style ──────────────────────────────────────────────
+// gpt-4o-mini-tts sounds far more natural than tts-1 and accepts style
+// instructions. Override with TTS_MODEL=tts-1 (or tts-1-hd) if needed.
+const TTS_MODEL = process.env.TTS_MODEL || 'gpt-4o-mini-tts';
+const TTS_FALLBACK_MODEL = 'tts-1';
+const TTS_SUPPORTS_INSTRUCTIONS = TTS_MODEL === 'gpt-4o-mini-tts';
+
+const TTS_INSTRUCTIONS = {
+    en: 'You are a professional audiobook narrator. Read in clear, natural American English '
+        + 'with warm, engaged intonation and a calm, steady pace. Respect punctuation: brief '
+        + 'pauses at commas, full pauses at periods. Pronounce acronyms and numbers correctly. '
+        + 'Never add, skip or comment on words.',
+    fr: 'Tu es un narrateur professionnel de livres audio. Lis en français de France standard, '
+        + 'avec un accent français natif et une prononciation parfaitement française '
+        + '(aucun accent anglais), une intonation chaleureuse et naturelle et un rythme posé. '
+        + 'Respecte la ponctuation : courtes pauses aux virgules, vraies pauses aux points. '
+        + 'Fais les liaisons correctement. N\'ajoute, ne saute et ne commente aucun mot.',
+};
+
 // TTS Semaphores
 const MAX_CONCURRENT_TTS = 5;
 let currentTtsJobs = 0;
@@ -208,9 +227,12 @@ app.post('/api/sentences', (req, res) => {
 // to the local cache file.  Used by both /api/tts and /api/download-audio.
 async function getOrCreateTtsFile(text, voice, lang) {
     let finalVoice = voice;
-    if (lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
+    // tts-1 voices have a strong English accent in French; only onyx/echo were
+    // acceptable. gpt-4o-mini-tts follows the French instructions with any voice.
+    if (!TTS_SUPPORTS_INSTRUCTIONS && lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
         finalVoice = 'onyx';
     }
+    const instructions = TTS_SUPPORTS_INSTRUCTIONS ? (TTS_INSTRUCTIONS[lang] ?? TTS_INSTRUCTIONS.en) : '';
 
     const normalizedText = normalizeText(text, lang);
 
@@ -220,7 +242,10 @@ async function getOrCreateTtsFile(text, voice, lang) {
         return null;
     }
 
-    const hash = crypto.createHash('sha256').update(`${normalizedText}-${finalVoice}-${lang}`).digest('hex');
+    // Model + instructions are part of the key so changing either never serves stale audio.
+    const hash = crypto.createHash('sha256')
+        .update(`${normalizedText}-${finalVoice}-${lang}-${TTS_MODEL}-${instructions}`)
+        .digest('hex');
     const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
 
     // Remove corrupted files
@@ -232,18 +257,38 @@ async function getOrCreateTtsFile(text, voice, lang) {
         }
     }
 
+    let resultPath = cachePath;
     if (!fs.existsSync(cachePath)) {
-        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) voice=${finalVoice}...`);
+        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) model=${TTS_MODEL} voice=${finalVoice}...`);
         await waitForTtsSlot();
         try {
-            const mp3 = await openai.audio.speech.create({
-                model: 'tts-1',
-                voice: finalVoice,
-                input: normalizedText,
-                response_format: 'mp3',
-            });
+            let mp3;
+            try {
+                mp3 = await openai.audio.speech.create({
+                    model: TTS_MODEL,
+                    voice: finalVoice,
+                    input: normalizedText,
+                    response_format: 'mp3',
+                    ...(instructions ? { instructions } : {}),
+                });
+            } catch (modelError) {
+                // Keep reading working if the key has no access to the newer model.
+                if (TTS_MODEL === TTS_FALLBACK_MODEL) throw modelError;
+                console.error(`[TTS] ${TTS_MODEL} failed (${modelError?.status ?? 'unknown'}: ${modelError?.message}). Falling back to ${TTS_FALLBACK_MODEL}.`);
+                mp3 = await openai.audio.speech.create({
+                    model: TTS_FALLBACK_MODEL,
+                    voice: finalVoice,
+                    input: normalizedText,
+                    response_format: 'mp3',
+                });
+                // Store fallback audio under its own key so the better model is retried next time.
+                const fallbackHash = crypto.createHash('sha256')
+                    .update(`${normalizedText}-${finalVoice}-${lang}-${TTS_FALLBACK_MODEL}-`)
+                    .digest('hex');
+                resultPath = path.join(CACHE_DIR, `${fallbackHash}.mp3`);
+            }
             const buffer = Buffer.from(await mp3.arrayBuffer());
-            fs.writeFileSync(cachePath, buffer);
+            fs.writeFileSync(resultPath, buffer);
             evictCacheIfNeeded();
         } finally {
             currentTtsJobs--;
@@ -254,7 +299,7 @@ async function getOrCreateTtsFile(text, voice, lang) {
         try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
     }
 
-    return cachePath;
+    return resultPath;
 }
 
 app.post('/api/tts', ttsLimiter, async (req, res) => {
