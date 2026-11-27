@@ -26,9 +26,21 @@ if (!process.env.TTS_CACHE_DIR && process.env.NODE_ENV === 'production') {
     console.warn('[TTS Cache] WARNING: TTS_CACHE_DIR is not set. Cache will be lost on redeploy. Set TTS_CACHE_DIR to a persistent volume path.');
 }
 
+function readPositiveIntEnv(name, fallback) {
+    const value = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 // LRU disk cache eviction — keep at most MAX_CACHE_FILES MP3s.
 // mtime is used as the LRU timestamp; cache hits touch the file to keep it fresh.
-const MAX_CACHE_FILES = parseInt(process.env.TTS_CACHE_MAX_FILES || '500', 10);
+const MAX_CACHE_FILES = readPositiveIntEnv('TTS_CACHE_MAX_FILES', 500);
+const MAX_TTS_TEXT_CHARS = readPositiveIntEnv('TTS_MAX_TEXT_CHARS', 5000);
+const MAX_DOWNLOAD_SENTENCES = readPositiveIntEnv('TTS_DOWNLOAD_MAX_SENTENCES', 120);
+const MAX_DOWNLOAD_TOTAL_CHARS = readPositiveIntEnv('TTS_DOWNLOAD_MAX_TOTAL_CHARS', 30000);
+const MAX_DOWNLOAD_JOBS = readPositiveIntEnv('TTS_DOWNLOAD_MAX_JOBS', 3);
+const MAX_EXAM_TEXT_CHARS = readPositiveIntEnv('EXAM_PARSE_MAX_TEXT_CHARS', 75000);
+const MAX_EXAM_CHUNKS = readPositiveIntEnv('EXAM_PARSE_MAX_CHUNKS', 8);
+const MAX_EXAM_CONCURRENT_CHUNKS = readPositiveIntEnv('EXAM_PARSE_CONCURRENCY', 2);
 
 function evictCacheIfNeeded() {
     const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.mp3'));
@@ -402,7 +414,7 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
         const { text, voice = 'alloy', lang = 'en' } = req.body;
 
         if (!text) return res.status(400).json({ error: 'Text is required' });
-        if (text.length > 5000) return res.status(400).json({ error: 'Text exceeds 5000 characters. Please chunk it.' });
+        if (text.length > MAX_TTS_TEXT_CHARS) return res.status(400).json({ error: `Text exceeds ${MAX_TTS_TEXT_CHARS} characters. Please chunk it.` });
 
         if (!process.env.OPENAI_API_KEY) {
             return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
@@ -461,25 +473,44 @@ app.post('/api/download-audio', ttsLimiter, (req, res) => {
     if (!Array.isArray(sentences) || sentences.length === 0) {
         return res.status(400).json({ error: 'sentences[] array is required.' });
     }
+    const normalizedSentences = sentences
+        .map(sentence => String(sentence || '').trim())
+        .filter(Boolean);
+    if (normalizedSentences.length === 0) {
+        return res.status(400).json({ error: 'At least one non-empty sentence is required.' });
+    }
+    if (normalizedSentences.length > MAX_DOWNLOAD_SENTENCES) {
+        return res.status(400).json({ error: `Download is limited to ${MAX_DOWNLOAD_SENTENCES} sentences per request.` });
+    }
+    if (normalizedSentences.some(sentence => sentence.length > MAX_TTS_TEXT_CHARS)) {
+        return res.status(400).json({ error: `Each sentence must be ${MAX_TTS_TEXT_CHARS} characters or fewer.` });
+    }
+    const totalChars = normalizedSentences.reduce((sum, sentence) => sum + sentence.length, 0);
+    if (totalChars > MAX_DOWNLOAD_TOTAL_CHARS) {
+        return res.status(400).json({ error: `Download text exceeds ${MAX_DOWNLOAD_TOTAL_CHARS} total characters.` });
+    }
+    const activeDownloadJobs = Array.from(downloadJobs.values()).filter(job => job.status === 'processing').length;
+    if (activeDownloadJobs >= MAX_DOWNLOAD_JOBS) {
+        return res.status(429).json({ error: 'Too many audio downloads are already processing. Please try again shortly.' });
+    }
     if (!process.env.OPENAI_API_KEY) {
         return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
     }
 
     const jobId = crypto.randomUUID();
-    downloadJobs.set(jobId, { status: 'processing', progress: 0, total: sentences.length, buffer: null, error: null });
+    downloadJobs.set(jobId, { status: 'processing', progress: 0, total: normalizedSentences.length, buffer: null, error: null });
+    setTimeout(() => downloadJobs.delete(jobId), 3600000);
 
     // Start background job
     (async () => {
         try {
-            console.log(`[Download Job ${jobId}] Compiling ${sentences.length} sentences into MP3 (voice=${voice}, lang=${lang})...`);
+            console.log(`[Download Job ${jobId}] Compiling ${normalizedSentences.length} sentences into MP3 (voice=${voice}, lang=${lang})...`);
             const buffers = [];
-            for (let i = 0; i < sentences.length; i++) {
-                const text = (sentences[i] || '').trim();
-                if (text) {
-                    const filePath = await getOrCreateTtsFile(text, voice, lang);
-                    if (filePath) {
-                        buffers.push(fs.readFileSync(filePath));
-                    }
+            for (let i = 0; i < normalizedSentences.length; i++) {
+                const text = normalizedSentences[i];
+                const filePath = await getOrCreateTtsFile(text, voice, lang);
+                if (filePath) {
+                    buffers.push(fs.readFileSync(filePath));
                 }
                 const job = downloadJobs.get(jobId);
                 if (job) job.progress = i + 1;
@@ -497,9 +528,6 @@ app.post('/api/download-audio', ttsLimiter, (req, res) => {
             job.buffer = Buffer.concat(buffers);
             job.status = 'completed';
             console.log(`[Download Job ${jobId}] Done — merged ${job.buffer.length} bytes.`);
-
-            // Clean up old jobs after 1 hour
-            setTimeout(() => downloadJobs.delete(jobId), 3600000);
         } catch (error) {
             console.error(`[Download Job ${jobId}] Error:`, error);
             const job = downloadJobs.get(jobId);
@@ -658,12 +686,23 @@ app.post('/api/parse-exam', aiLimiter, async (req, res) => {
     try {
         const { text } = req.body;
         if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+        if (text.length > MAX_EXAM_TEXT_CHARS) {
+            return res.status(400).json({ error: `Exam text exceeds ${MAX_EXAM_TEXT_CHARS} characters.` });
+        }
         if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key missing in backend/.env' });
 
         const chunks = splitExamText(text);
+        if (chunks.length > MAX_EXAM_CHUNKS) {
+            return res.status(400).json({ error: `Exam parse is limited to ${MAX_EXAM_CHUNKS} chunks per request.` });
+        }
         console.log(`[ParseExam] Parsing ${text.length} chars across ${chunks.length} chunk(s)...`);
 
-        const chunkResults = await Promise.all(chunks.map(chunk => parseExamChunk(chunk, openai)));
+        const chunkResults = [];
+        for (let i = 0; i < chunks.length; i += MAX_EXAM_CONCURRENT_CHUNKS) {
+            const batch = chunks.slice(i, i + MAX_EXAM_CONCURRENT_CHUNKS);
+            const batchResults = await Promise.all(batch.map(chunk => parseExamChunk(chunk, openai)));
+            chunkResults.push(...batchResults);
+        }
         const allQuestions = chunkResults.flat();
 
         if (allQuestions.length === 0) {
