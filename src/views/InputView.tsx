@@ -3,6 +3,7 @@ import { CheckCircle2, XCircle, Loader2, Paperclip, Download } from 'lucide-reac
 import { splitSentences } from '../hooks/useSentenceSplitter';
 import { useAzureVoices } from '../hooks/useAzureVoices';
 import { apiFetch } from '../lib/api';
+import { buildReadingMp3 } from '../lib/audioDownload';
 import { OPENAI_VOICES, findVoice, getEffectiveVoiceId, getVoiceOptions } from '../lib/voices';
 import './InputView.css';
 
@@ -111,45 +112,27 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
         setDownloadProgress(0);
         setDownloadTotal(0);
         try {
-            const lang = readingLanguage === 'french' ? 'fr' : 'en';
             const { spoken } = splitSentences(text);
-            const res = await apiFetch('/api/download-audio', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sentences: spoken, voice: selectedVoice, lang }),
+            const mp3 = await buildReadingMp3({
+                sentences: spoken,
+                voice: selectedVoice,
+                lang: voiceLang,
+                onProgress: (done, total) => {
+                    setDownloadProgress(done);
+                    setDownloadTotal(total);
+                },
             });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                throw new Error(err.error ?? `HTTP ${res.status}`);
-            }
-
-            const { jobId } = await res.json();
-
-            while (true) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const statusRes = await apiFetch(`/api/download-audio/${jobId}/status`);
-                if (!statusRes.ok) throw new Error('Failed to fetch job status');
-                const statusData = await statusRes.json();
-
-                if (statusData.status === 'error') {
-                    throw new Error(statusData.error || 'Compilation failed');
-                }
-
-                setDownloadProgress(statusData.progress || 0);
-                setDownloadTotal(statusData.total || 0);
-
-                if (statusData.status === 'completed') {
-                    const downloadUrl = `${import.meta.env.VITE_API_URL || ''}/api/download-audio/${jobId}/file`;
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = 'alphie-reading.mp3';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    break;
-                }
-            }
+            const downloadUrl = URL.createObjectURL(mp3);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = 'alphie-reading.mp3';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // Give the browser time to start the download before freeing the blob.
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
         } catch (e: unknown) {
+            console.error('[Download] MP3 build failed:', e);
             setDownloadError(e instanceof Error ? e.message : String(e));
         } finally {
             setIsDownloading(false);
