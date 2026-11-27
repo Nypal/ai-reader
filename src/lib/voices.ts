@@ -14,6 +14,19 @@ export interface VoiceOption {
 }
 
 export const DEFAULT_VOICE_ID = 'echo';
+/** Default for French reading when Azure is configured (native French narrator). */
+export const DEFAULT_FRENCH_AZURE_VOICE_ID = 'azure:fr-FR-VivienneMultilingualNeural';
+
+/** Voice used when the reader has never picked one. */
+export function getDefaultVoiceId(lang: VoiceLang, isAzureAvailable: boolean): string {
+    return lang === 'fr' && isAzureAvailable ? DEFAULT_FRENCH_AZURE_VOICE_ID : DEFAULT_VOICE_ID;
+}
+
+/** Saved choice if valid and servable, otherwise the default for this language. */
+export function getEffectiveVoiceId(savedVoiceId: string | null, lang: VoiceLang, isAzureAvailable: boolean | null): string {
+    if (savedVoiceId && findVoice(savedVoiceId)) return resolveSelectableVoice(savedVoiceId, isAzureAvailable);
+    return getDefaultVoiceId(lang, isAzureAvailable === true);
+}
 
 export const OPENAI_VOICES: VoiceOption[] = [
     { id: 'onyx', name: 'Onyx', desc: 'Deep · Authoritative', engine: 'openai' },
@@ -56,6 +69,12 @@ export function resolveSelectableVoice(id: string, isAzureAvailable: boolean | n
 }
 
 let azureAvailabilityPromise: Promise<boolean> | null = null;
+let cachedAzureAvailability: boolean | null = null;
+
+/** Last known Azure availability (null until the first check completes). */
+export function getCachedAzureAvailability(): boolean | null {
+    return cachedAzureAvailability;
+}
 
 /** Asks the backend once per page load whether Azure voices are configured. */
 export function fetchAzureAvailability(): Promise<boolean> {
@@ -65,8 +84,9 @@ export function fetchAzureAvailability(): Promise<boolean> {
                 const res = await apiFetch('/api/health');
                 if (!res.ok) throw new Error(`Health API ${res.status}`);
                 const data: unknown = await res.json();
-                return typeof data === 'object' && data !== null
+                cachedAzureAvailability = typeof data === 'object' && data !== null
                     && (data as { azureVoicesAvailable?: unknown }).azureVoicesAvailable === true;
+                return cachedAzureAvailability;
             } catch (err) {
                 console.error('[voices] Could not check Azure availability:', err);
                 azureAvailabilityPromise = null; // retry on next call

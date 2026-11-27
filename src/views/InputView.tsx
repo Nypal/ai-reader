@@ -3,7 +3,7 @@ import { CheckCircle2, XCircle, Loader2, Paperclip, Download } from 'lucide-reac
 import { splitSentences } from '../hooks/useSentenceSplitter';
 import { useAzureVoices } from '../hooks/useAzureVoices';
 import { apiFetch } from '../lib/api';
-import { DEFAULT_VOICE_ID, OPENAI_VOICES, findVoice, getVoiceOptions, resolveSelectableVoice } from '../lib/voices';
+import { OPENAI_VOICES, findVoice, getEffectiveVoiceId, getVoiceOptions } from '../lib/voices';
 import './InputView.css';
 
 interface InputViewProps {
@@ -67,12 +67,13 @@ export default function InputView({ onStart, onExam, onArena, onPrewarm, onPdfRe
     });
 
     const isAzureAvailable = useAzureVoices();
-    const [storedVoice, setSelectedVoice] = useState<string>(() =>
-        localStorage.getItem('playlearn_voice') || DEFAULT_VOICE_ID
+    // null = the reader never picked a voice, so the language default applies (Vivienne in French).
+    const [storedVoice, setSelectedVoice] = useState<string | null>(() =>
+        localStorage.getItem('playlearn_voice')
     );
-    // An Azure voice saved earlier is replaced by the default when Azure is not configured.
-    const selectedVoice = resolveSelectableVoice(storedVoice, isAzureAvailable);
-    const voiceOptions = getVoiceOptions(isAzureAvailable === true, readingLanguage === 'french' ? 'fr' : 'en');
+    const voiceLang = readingLanguage === 'french' ? 'fr' : 'en';
+    const selectedVoice = getEffectiveVoiceId(storedVoice, voiceLang, isAzureAvailable);
+    const voiceOptions = getVoiceOptions(isAzureAvailable === true, voiceLang);
 
     const [theme, setThemeState] = useState<AppTheme>(() => {
         const saved = localStorage.getItem('playlearn_theme') as AppTheme | null;
