@@ -100,7 +100,6 @@ const openai = new OpenAI({
 // instructions. Override with TTS_MODEL=tts-1 (or tts-1-hd) if needed.
 const TTS_MODEL = process.env.TTS_MODEL || 'gpt-4o-mini-tts';
 const TTS_FALLBACK_MODEL = 'tts-1';
-const TTS_SUPPORTS_INSTRUCTIONS = TTS_MODEL === 'gpt-4o-mini-tts';
 
 const TTS_INSTRUCTIONS = {
     en: 'You are a professional audiobook narrator. Read in clear, natural American English '
@@ -113,6 +112,74 @@ const TTS_INSTRUCTIONS = {
         + 'Respecte la ponctuation : courtes pauses aux virgules, vraies pauses aux points. '
         + 'Fais les liaisons correctement. N\'ajoute, ne saute et ne commente aucun mot.',
 };
+
+// ── Azure Neural voices (same engine TTSReader uses) ─────────────────────────
+// Enabled when AZURE_SPEECH_KEY + AZURE_SPEECH_REGION are set. The frontend
+// sends voice ids prefixed with "azure:" (e.g. "azure:fr-FR-DeniseNeural").
+const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_KEY || '';
+const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION || '';
+const AZURE_ENABLED = Boolean(AZURE_SPEECH_KEY && AZURE_SPEECH_REGION);
+const AZURE_VOICE_PREFIX = 'azure:';
+const AZURE_OUTPUT_FORMAT = 'audio-24khz-96kbitrate-mono-mp3';
+const AZURE_LOCALES = { en: 'en-US', fr: 'fr-FR' };
+// Default voice per reading language when the chosen voice can't read it natively.
+const AZURE_DEFAULT_VOICES = {
+    en: 'en-US-AvaMultilingualNeural',
+    fr: 'fr-FR-VivienneMultilingualNeural',
+};
+// Only these voices are accepted from the client.
+const AZURE_ALLOWED_VOICES = new Set([
+    'fr-FR-VivienneMultilingualNeural',
+    'fr-FR-RemyMultilingualNeural',
+    'fr-FR-DeniseNeural',
+    'fr-FR-HenriNeural',
+    'en-US-AvaMultilingualNeural',
+    'en-US-AndrewMultilingualNeural',
+]);
+const OPENAI_FALLBACK_VOICE = 'nova';
+
+function escapeXml(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+/** Picks the Azure voice that will read `lang` natively. */
+function resolveAzureVoice(requestedVoice, lang) {
+    const locale = AZURE_LOCALES[lang] ?? AZURE_LOCALES.en;
+    if (!AZURE_ALLOWED_VOICES.has(requestedVoice)) return AZURE_DEFAULT_VOICES[lang] ?? AZURE_DEFAULT_VOICES.en;
+    // Multilingual voices can read any language; others only their own locale.
+    if (requestedVoice.startsWith(locale) || requestedVoice.includes('Multilingual')) return requestedVoice;
+    return AZURE_DEFAULT_VOICES[lang] ?? AZURE_DEFAULT_VOICES.en;
+}
+
+/** Calls the Azure Speech REST API and returns an MP3 buffer. */
+async function synthesizeWithAzure(text, voiceName, lang) {
+    const locale = AZURE_LOCALES[lang] ?? AZURE_LOCALES.en;
+    // <lang> forces native pronunciation when a multilingual voice reads another language.
+    const body = voiceName.includes('Multilingual')
+        ? `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}"><voice name="${voiceName}"><lang xml:lang="${locale}">${escapeXml(text)}</lang></voice></speak>`
+        : `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}"><voice name="${voiceName}">${escapeXml(text)}</voice></speak>`;
+
+    const res = await fetch(`https://${AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+        method: 'POST',
+        headers: {
+            'Ocp-Apim-Subscription-Key': AZURE_SPEECH_KEY,
+            'Content-Type': 'application/ssml+xml',
+            'X-Microsoft-OutputFormat': AZURE_OUTPUT_FORMAT,
+            'User-Agent': 'alphie-backend',
+        },
+        body,
+    });
+    if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`Azure TTS ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+}
 
 // TTS Semaphores
 const MAX_CONCURRENT_TTS = 5;
@@ -179,7 +246,7 @@ function normalizeText(text, lang) {
 
 app.get('/api/health', (req, res) => {
     const hasOpenAI = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'dummy_key';
-    res.json({ status: 'ok', openaiKeyLoaded: hasOpenAI });
+    res.json({ status: 'ok', openaiKeyLoaded: hasOpenAI, azureVoicesAvailable: AZURE_ENABLED });
 });
 
 // The Sentence Splitter Endpoint
@@ -225,15 +292,77 @@ app.post('/api/sentences', (req, res) => {
 // ── Shared TTS helper ─────────────────────────────────────────────────────────
 // Resolves (or synthesises) the MP3 for a single sentence and returns the path
 // to the local cache file.  Used by both /api/tts and /api/download-audio.
-async function getOrCreateTtsFile(text, voice, lang) {
+/** Builds a synthesis plan for an OpenAI voice + model (cache key + synth fn). */
+function openaiPlan(normalizedText, voice, lang, model) {
+    const supportsInstructions = model === 'gpt-4o-mini-tts';
     let finalVoice = voice;
     // tts-1 voices have a strong English accent in French; only onyx/echo were
     // acceptable. gpt-4o-mini-tts follows the French instructions with any voice.
-    if (!TTS_SUPPORTS_INSTRUCTIONS && lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
+    if (!supportsInstructions && lang === 'fr' && voice !== 'onyx' && voice !== 'echo') {
         finalVoice = 'onyx';
     }
-    const instructions = TTS_SUPPORTS_INSTRUCTIONS ? (TTS_INSTRUCTIONS[lang] ?? TTS_INSTRUCTIONS.en) : '';
+    const instructions = supportsInstructions ? (TTS_INSTRUCTIONS[lang] ?? TTS_INSTRUCTIONS.en) : '';
+    return {
+        label: `openai model=${model} voice=${finalVoice}`,
+        // Model + instructions are part of the key so changing either never serves stale audio.
+        cacheKey: `${normalizedText}-${finalVoice}-${lang}-${model}-${instructions}`,
+        synthesize: async () => {
+            const mp3 = await openai.audio.speech.create({
+                model,
+                voice: finalVoice,
+                input: normalizedText,
+                response_format: 'mp3',
+                ...(instructions ? { instructions } : {}),
+            });
+            return Buffer.from(await mp3.arrayBuffer());
+        },
+    };
+}
 
+/** Ordered list of engines to try: the requested one first, then fallbacks. */
+function buildTtsPlans(normalizedText, voice, lang) {
+    const plans = [];
+    let openaiVoice = voice;
+    if (typeof voice === 'string' && voice.startsWith(AZURE_VOICE_PREFIX)) {
+        openaiVoice = OPENAI_FALLBACK_VOICE;
+        if (AZURE_ENABLED) {
+            const azureVoice = resolveAzureVoice(voice.slice(AZURE_VOICE_PREFIX.length), lang);
+            plans.push({
+                label: `azure voice=${azureVoice}`,
+                cacheKey: `${normalizedText}-${azureVoice}-${lang}-azure-`,
+                synthesize: () => synthesizeWithAzure(normalizedText, azureVoice, lang),
+            });
+        } else {
+            console.warn('[TTS] Azure voice requested but AZURE_SPEECH_KEY/AZURE_SPEECH_REGION are not set — using OpenAI.');
+        }
+    }
+    plans.push(openaiPlan(normalizedText, openaiVoice, lang, TTS_MODEL));
+    if (TTS_MODEL !== TTS_FALLBACK_MODEL) {
+        plans.push(openaiPlan(normalizedText, openaiVoice, lang, TTS_FALLBACK_MODEL));
+    }
+    return plans;
+}
+
+function cachePathFor(cacheKey) {
+    const hash = crypto.createHash('sha256').update(cacheKey).digest('hex');
+    return path.join(CACHE_DIR, `${hash}.mp3`);
+}
+
+/** Returns true if a usable cached file exists (and refreshes its LRU timestamp). */
+function useCachedFile(cachePath) {
+    if (!fs.existsSync(cachePath)) return false;
+    const stat = fs.statSync(cachePath);
+    if (stat.size < 1000) {
+        console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
+        try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
+        return false;
+    }
+    const now = new Date();
+    try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
+    return true;
+}
+
+async function getOrCreateTtsFile(text, voice, lang) {
     const normalizedText = normalizeText(text, lang);
 
     // Guard: normalizeText may strip all content (e.g. punctuation-only input)
@@ -242,64 +371,30 @@ async function getOrCreateTtsFile(text, voice, lang) {
         return null;
     }
 
-    // Model + instructions are part of the key so changing either never serves stale audio.
-    const hash = crypto.createHash('sha256')
-        .update(`${normalizedText}-${finalVoice}-${lang}-${TTS_MODEL}-${instructions}`)
-        .digest('hex');
-    const cachePath = path.join(CACHE_DIR, `${hash}.mp3`);
-
-    // Remove corrupted files
-    if (fs.existsSync(cachePath)) {
-        const stat = fs.statSync(cachePath);
-        if (stat.size < 1000) {
-            console.log(`[TTS] Deleting corrupted cache file (size ${stat.size}): ${cachePath}`);
-            try { fs.unlinkSync(cachePath); } catch { /* ignore */ }
+    // Each plan caches under its own key, so fallback audio never hides the
+    // preferred engine: it is retried on the next request.
+    let lastError = null;
+    for (const plan of buildTtsPlans(normalizedText, voice, lang)) {
+        const cachePath = cachePathFor(plan.cacheKey);
+        if (useCachedFile(cachePath)) {
+            console.log(`[TTS] Cache HIT (${normalizedText.length} chars) ${plan.label}`);
+            return cachePath;
         }
-    }
-
-    let resultPath = cachePath;
-    if (!fs.existsSync(cachePath)) {
-        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) model=${TTS_MODEL} voice=${finalVoice}...`);
+        console.log(`[TTS] Cache MISS. Generating ${lang} audio (${normalizedText.length} chars) ${plan.label}...`);
         await waitForTtsSlot();
         try {
-            let mp3;
-            try {
-                mp3 = await openai.audio.speech.create({
-                    model: TTS_MODEL,
-                    voice: finalVoice,
-                    input: normalizedText,
-                    response_format: 'mp3',
-                    ...(instructions ? { instructions } : {}),
-                });
-            } catch (modelError) {
-                // Keep reading working if the key has no access to the newer model.
-                if (TTS_MODEL === TTS_FALLBACK_MODEL) throw modelError;
-                console.error(`[TTS] ${TTS_MODEL} failed (${modelError?.status ?? 'unknown'}: ${modelError?.message}). Falling back to ${TTS_FALLBACK_MODEL}.`);
-                mp3 = await openai.audio.speech.create({
-                    model: TTS_FALLBACK_MODEL,
-                    voice: finalVoice,
-                    input: normalizedText,
-                    response_format: 'mp3',
-                });
-                // Store fallback audio under its own key so the better model is retried next time.
-                const fallbackHash = crypto.createHash('sha256')
-                    .update(`${normalizedText}-${finalVoice}-${lang}-${TTS_FALLBACK_MODEL}-`)
-                    .digest('hex');
-                resultPath = path.join(CACHE_DIR, `${fallbackHash}.mp3`);
-            }
-            const buffer = Buffer.from(await mp3.arrayBuffer());
-            fs.writeFileSync(resultPath, buffer);
+            const buffer = await plan.synthesize();
+            fs.writeFileSync(cachePath, buffer);
             evictCacheIfNeeded();
+            return cachePath;
+        } catch (error) {
+            lastError = error;
+            console.error(`[TTS] ${plan.label} failed (${error?.status ?? ''} ${error?.message}). Trying next engine.`);
         } finally {
             currentTtsJobs--;
         }
-    } else {
-        console.log(`[TTS] Cache HIT (${normalizedText.length} chars)`);
-        const now = new Date();
-        try { fs.utimesSync(cachePath, now, now); } catch { /* ignore */ }
     }
-
-    return resultPath;
+    throw lastError ?? new Error('No TTS engine available');
 }
 
 app.post('/api/tts', ttsLimiter, async (req, res) => {
