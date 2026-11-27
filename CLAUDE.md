@@ -274,5 +274,7 @@ Decisions made with the owner that are not obvious from the code. Keep this list
       The "Feynman test" wording above refers to that flow.
 - [ ] Worker deploys are manual. Optional: a GitHub Action running `wrangler deploy` on
       pushes to `master` that touch `worker/` or `backend/lib/`.
-- [ ] Delete merged remote branches (`feature/azure-tts-voices`,
-      `feature/cloudflare-worker-backend`, `docs/update-claude-md`).
+- [x] Delete merged remote branches (`feature/azure-tts-voices`,
+      `feature/cloudflare-worker-backend`, `docs/update-claude-md`). Done 2026-11-27,
+      along with `codex/harden-ai-reader-deploy`, `docs/claude-md-decisions` and the
+      merged local branches.
