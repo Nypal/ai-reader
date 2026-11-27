@@ -269,7 +269,8 @@ Decisions made with the owner that are not obvious from the code. Keep this list
       `cd worker && npx wrangler secret put OPENAI_API_KEY`, and revoke the old key.
 - [ ] Delete the Railway projects (`fulfilling-joy`, `giving-passion`) — no longer used.
 - [x] `backend/CLAUDE.md` rewritten to match `lib/core.js` and committed (2026-11-27).
-- [ ] Delete leftover backend files: `railway.toml`, `patch_quiz.js`, `test-quiz.js`, `test.mp3`.
+- [x] Delete leftover backend files: `railway.toml`, `patch_quiz.js`, `test-quiz.js`, `test.mp3`
+      (done 2026-11-27).
 - [ ] There is no `/api/feynman` endpoint: the open question in the quiz uses `/api/evaluate`.
       The "Feynman test" wording above refers to that flow.
 - [ ] Worker deploys are manual. Optional: a GitHub Action running `wrangler deploy` on

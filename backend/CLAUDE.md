@@ -131,13 +131,6 @@ No hot reload on Express — restart after changes.
 
 ---
 
-## Leftover Files
-
-`railway.toml` (Railway is no longer used), `patch_quiz.js`, `test-quiz.js` and
-`test.mp3` are old one-off files still tracked in git. Candidates for deletion.
-
----
-
 ## Common Issues
 
 | Problem | Likely cause | Fix |
