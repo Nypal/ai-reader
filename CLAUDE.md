@@ -236,3 +236,43 @@ ai_reader_audit_*  → AuditService session data
   - Full guide: `worker/README.md`
 - **Azure Speech**: resource `alphie-speech-tts` (group `alphie-rg`, France Central), Free F0 tier
 - **Railway**: no longer used (trial ended); the Worker replaced it
+
+---
+
+## 🧠 Decisions & Context
+
+Decisions made with the owner that are not obvious from the code. Keep this list current.
+
+- **Voice quality target = TTSReader.com.** Its quality comes from Azure Neural voices plus
+  light text prep. Hence: Azure voices first, and OpenAI `gpt-4o-mini-tts` with narrator
+  `instructions` (native French accent) instead of `tts-1`.
+- **Vivienne is the French default.** The owner compared Vivienne, Denise and Henri by ear
+  and preferred Vivienne. Don't change the default voice without asking.
+- **Azure stays on the Free F0 tier** (0.5M neural characters/month). The owner wants no
+  surprise costs: never upgrade the tier or add paid Azure services without asking.
+  Region is France Central because West Europe refused new customers.
+- **Cloudflare Workers replaced Railway** because Railway's trial ended and the owner already
+  uses Cloudflare. Keep the backend free-tier friendly (≤50 subrequests per request, no
+  long-running jobs, no in-memory state between requests).
+- **MP3 download is built in the browser** for the same reason: Workers can't hold
+  download jobs in memory.
+- **Merging to `master`:** the "Protect master" ruleset requires 1 approving review. The
+  owner is the only maintainer and merges with the admin bypass ("Bypass rules and merge").
+  Claude opens the PR; the owner clicks merge.
+- **Secrets are handled by the owner only.** Claude never reads, prints or types API keys;
+  the owner pastes them (e.g. into `wrangler secret put`).
+
+## 📝 To Do
+
+- [ ] **Rotate the OpenAI API key** (part of it appeared in a screenshot). Create a new key at
+      platform.openai.com/api-keys, put it in `backend/.env`, then
+      `cd worker && npx wrangler secret put OPENAI_API_KEY`, and revoke the old key.
+- [ ] Delete the Railway projects (`fulfilling-joy`, `giving-passion`) — no longer used.
+- [ ] `backend/CLAUDE.md` is outdated (mentions `/api/feynman`, `westeurope`, old response
+      shapes) and is not committed. Update it or delete it.
+- [ ] There is no `/api/feynman` endpoint: the open question in the quiz uses `/api/evaluate`.
+      The "Feynman test" wording above refers to that flow.
+- [ ] Worker deploys are manual. Optional: a GitHub Action running `wrangler deploy` on
+      pushes to `master` that touch `worker/` or `backend/lib/`.
+- [ ] Delete merged remote branches (`feature/azure-tts-voices`,
+      `feature/cloudflare-worker-backend`, `docs/update-claude-md`).
