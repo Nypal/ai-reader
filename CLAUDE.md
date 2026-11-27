@@ -1,65 +1,238 @@
-# CLAUDE.md
+# CLAUDE.md — Alphie / AI Reader
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> This file is automatically loaded by Claude Code at startup. It provides persistent project memory.
+> Keep it up-to-date as the project evolves.
 
-## Project Overview
+---
 
-**Alphie** is a two-process AI-powered reading and learning app ("Read deeply. Learn fully."). Users paste or upload text, listen to it read aloud via OpenAI TTS, then optionally take an AI-generated quiz and Feynman test.
+## 🧭 Project Overview
 
-## Commands
+**Alphie** is a two-process AI-powered reading and learning app.
+- **Tagline:** "Read deeply. Learn fully."
+- **Core loop:** Paste/upload text → Listen (TTS) → Take AI quiz → Feynman test
+- **Target users:** Students, learners, professionals who want to retain what they read
 
-### Frontend (root directory)
+### Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Vite + React 19 + TypeScript |
+| Styling | Vanilla CSS with CSS custom properties (themes) |
+| Backend | Cloudflare Worker in production (`worker/`), Node.js + Express for local dev (`backend/`); both share `backend/lib/core.js` |
+| AI | OpenAI GPT-4o / GPT-4o-mini (quiz, evaluate, exam parsing) |
+| TTS | Azure Neural voices (Vivienne, etc.) → OpenAI `gpt-4o-mini-tts` → `tts-1` fallback |
+| PDF parsing | pdfjs-dist (client-side, no server upload) |
+| Animations | Framer Motion |
+
+---
+
+## 🚀 Dev Commands
+
+### Start Development (both must run simultaneously)
 ```bash
-npm run dev       # Start Vite dev server (HMR)
-npm run build     # Type-check + build to dist/
-npm run lint      # ESLint
-npm run preview   # Serve the dist/ build locally
+# Terminal 1 — Frontend
+npm run dev                    # Vite HMR on http://localhost:5173
+
+# Terminal 2 — Backend
+cd backend && node server.js   # Express proxy on http://localhost:3001
+
+# Optional — run the production Worker locally instead of Express
+cd worker && npx wrangler dev --env-file ../backend/.env   # http://localhost:8787
 ```
 
-### Backend (backend/ directory)
+### Other Frontend Commands
 ```bash
-cd backend && node server.js   # Start Express proxy on port 3001
+npm run build    # TypeScript check + Vite production build → dist/
+npm run lint     # ESLint
+npm run preview  # Serve dist/ locally
 ```
-
-Both processes must run simultaneously during development. The frontend always expects the backend at `http://localhost:3001`.
 
 ### Setup
-Copy `backend/.env` and set `OPENAI_API_KEY`. The backend will refuse TTS/quiz/feynman requests if the key is missing or still the placeholder value.
+```bash
+cp backend/.env.example backend/.env
+# Edit backend/.env and set OPENAI_API_KEY=sk-...
+# Optional: AZURE_SPEECH_KEY + AZURE_SPEECH_REGION=francecentral for Azure voices
+```
 
-## Architecture
+---
+
+## 🏗️ Architecture
 
 ### Two-Process Structure
-- **Frontend**: Vite + React 19 + TypeScript, runs on the default Vite port (5173)
-- **Backend** (`backend/server.js`): Express proxy that holds the OpenAI API key and exposes 5 endpoints (`/api/health`, `/api/tts`, `/api/quiz`, `/api/evaluate`, `/api/feynman`)
+```
+Dev:  Browser ──→ Frontend (Vite:5173) ──→ Backend (Express:3001) ──→ OpenAI / Azure
+Prod: Browser ──→ Vercel ──→ Cloudflare Worker (alphie-api) ──→ OpenAI / Azure
+```
 
-The backend exists solely to keep the OpenAI key server-side. All AI work happens there (TTS via `openai.audio.speech`, quiz/evaluate/feynman via `gpt-4o` with `response_format: { type: "json_object" }`).
+The backend exists **solely** to keep the OpenAI and Azure keys server-side.
+Never move API calls to the frontend. Never expose the keys.
+
+**Business logic lives in `backend/lib/core.js`** (prompts, TTS engines, exam parsing).
+It must stay runtime-agnostic — only `fetch`, `crypto.subtle`, `TextEncoder`; no Node-only
+modules — because both `backend/server.js` and `worker/src/index.js` import it.
+Change behaviour there, not in the two entry points.
+
+| Concern | Express (`backend/server.js`) | Worker (`worker/src/index.js`) |
+|---------|-------------------------------|--------------------------------|
+| TTS audio cache | `backend/tts-cache/` on disk | Cloudflare Cache API |
+| Rate limits | `express-rate-limit` | `[[ratelimits]]` in `worker/wrangler.toml` |
+| CORS | localhost / `FRONTEND_URL` | `ALLOWED_ORIGINS` in `wrangler.toml` |
+| Secrets | `backend/.env` | `wrangler secret put` |
 
 ### App State Machine (`src/App.tsx`)
-The entire app is a single-page state machine with four states held in `App.tsx`:
 ```
-'input' → 'reading' → 'quiz' → 'input'  (learn mode)
-'input' → 'reading' → 'input'           (read mode)
-'input' → 'arena'   → 'input'
+'landing' → 'input'
+'input'   → 'reading' → 'quiz' → 'input'   (learn mode)
+'input'   → 'reading' → 'input'             (read mode)
+'input'   → 'arena'   → 'input'
 ```
-State is passed down as props; there is no router. `content`, `readingMode`, and `readingLanguage` are the only cross-view props.
+State flows via props only — no router, no global state manager.
 
-### Views (`src/views/`)
-- **InputView**: Text/PDF input, mode (read/learn), voice, language (EN/FR), theme selection. PDF parsing uses `pdfjs-dist` entirely client-side.
-- **ReaderView**: The core TTS engine. Splits text into sentences via `useSentenceSplitter`, streams audio sentence-by-sentence with a lookahead cache of 2 sentences (max 4 cached). Uses `runIdRef` to guard stale async callbacks across seeks/stops. Auto-starts playback on mount.
-- **QuizView**: Fetches AI-generated MCQ questions from `/api/quiz`, then offers a Feynman free-response test via `/api/feynman` and `/api/evaluate`.
-- **ArenaView**: Gamification dashboard (XP, levels, badges, daily quests, leaderboard). Entirely UI demo — no persistence beyond the in-memory `gameStore`.
+### Backend API Endpoints (same on Express and Worker)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/health` | `{ status, openaiKeyLoaded, azureVoicesAvailable }` |
+| POST | `/api/tts` | Text-to-speech for one sentence (audio/mpeg, supports Range) |
+| POST | `/api/quiz` (alias `/api/questions`) | 4 MCQ + 1 open question from text |
+| POST | `/api/evaluate` | Coach feedback on the open-question answer |
+| POST | `/api/parse-exam` | Parse exam-format text into quiz questions |
+| POST | `/api/sentences` | Server-side sentence splitter (unused by the frontend) |
 
-### Key Patterns
-- **`useSentenceSplitter`** (`src/hooks/`): Splits text into `{ original, spoken }` arrays — `spoken` replaces email addresses with pronounceable forms (e.g. `user@example.com` → `user at example dot com`) and bullet points become sentence boundaries.
-- **`gameStore`** (`src/store/gameStore.ts`): Custom observer pattern (no Redux/Zustand). Exposes `subscribe`, `getSnapshot`, `earnXP`, `completeQuest`, `unlockBadge`. ArenaView subscribes on mount.
-- **`AuditService`** (`src/services/AuditService.ts`): Persists reading sessions, quiz concept performance, and Feynman scores to `localStorage` under `ai_reader_audit_*` keys.
-- **User preferences** (`localStorage`): `playlearn_voice`, `playlearn_theme`, `playlearn_mode` — read on mount in InputView and ReaderView.
-- **Themes**: Applied by toggling `data-theme` attribute on `document.documentElement` (`night` = no attribute, others = `data-theme="light|sepia|forest"`). CSS vars defined in `src/index.css`.
+The full-reading MP3 download is assembled **in the browser** (`src/lib/audioDownload.ts`)
+from `/api/tts` calls — there are no server-side download jobs.
 
-### ReaderView TTS Engine Details
-The TTS playback pipeline is the most complex part of the codebase:
-- `runIdRef` increments on every stop/seek to cancel in-flight async chains
-- `isStoppedRef` gates all audio callbacks
-- `abortRef` (`AbortController`) cancels in-flight `fetch` calls
-- `cacheRef` (Map) stores pre-fetched audio as object URLs; evicts oldest when over `MAX_CACHE=4`
-- Audio element cleanup is deferred via `setTimeout(..., 0)` to avoid browser extension promise errors on unmount
+### Voices
+- Voice ids prefixed `azure:` use Azure; others are OpenAI voices (`src/lib/voices.ts`)
+- Azure voices are only listed when `/api/health` reports `azureVoicesAvailable`, and only
+  those native to the reading language (French → Vivienne, Rémy, Denise, Henri)
+- French defaults to Vivienne when Azure is available; English defaults to Echo
+- The allowed Azure voice list must match `AZURE_ALLOWED_VOICES` in `backend/lib/core.js`
+
+---
+
+## 📁 Source Structure
+
+```
+src/
+├── App.tsx              # Root state machine + view router
+├── App.css              # App-level layout styles
+├── index.css            # Global CSS vars, themes, reset
+├── main.tsx             # React entry point
+├── components/
+│   └── Header.tsx       # Top nav (shown only in reading/quiz states)
+├── views/
+│   ├── LandingView.tsx  # Marketing landing page
+│   ├── InputView.tsx    # Text/PDF input + mode/voice/language selection
+│   ├── ReaderView.tsx   # TTS audio player + sentence highlighting
+│   ├── QuizView.tsx     # MCQ + Feynman test
+│   └── ArenaView.tsx    # Gamification dashboard (UI demo)
+├── hooks/
+│   ├── useSentenceSplitter.ts  # Sentence tokenizer with TTS normalization
+│   └── useAzureVoices.ts       # Whether the backend offers Azure voices
+├── lib/
+│   ├── api.ts           # apiFetch() wrapper — always uses VITE_API_URL
+│   ├── voices.ts        # Voice catalogue (Azure + OpenAI) and default-voice rules
+│   └── audioDownload.ts # Builds the full-reading MP3 from /api/tts calls
+├── services/
+│   └── AuditService.ts  # localStorage persistence for reading/quiz sessions
+└── store/
+    └── gameStore.ts     # Observer-pattern store for XP/badges/quests
+```
+
+---
+
+## 🔑 Key Patterns & Gotchas
+
+### TTS Engine (ReaderView) — Most Complex Part
+```
+runIdRef        → Increments on every stop/seek; cancels stale async chains
+isStoppedRef    → Gates all audio callbacks
+abortRef        → AbortController for in-flight fetch calls
+cacheRef (Map)  → Pre-fetched audio as object URLs; evicts oldest when >MAX_CACHE(4)
+```
+- **Never** call `audioEl.play()` without checking `runIdRef` and `isStoppedRef` first
+- Audio cleanup is `setTimeout(..., 0)` — prevents browser extension errors on unmount
+- Lookahead: fetches up to 2 sentences ahead
+
+### Sentence Splitter (`useSentenceSplitter`)
+- Returns `{ original, spoken }` pairs
+- `spoken`: replaces emails (`user@example.com` → `user at example dot com`), converts bullets to sentence boundaries
+- Always use `spoken` for TTS, `original` for display
+
+### Theming System
+```css
+/* Night theme = NO data-theme attribute */
+/* Other themes = data-theme="light|sepia|forest" */
+document.documentElement.setAttribute('data-theme', theme)
+document.documentElement.removeAttribute('data-theme') // for night
+```
+All CSS vars defined in `src/index.css`. Never use hardcoded colors — always use CSS vars.
+
+### API Calls
+```typescript
+import { apiFetch } from './lib/api';
+// Always use apiFetch — never fetch() directly
+// It prepends VITE_API_URL automatically
+const res = await apiFetch('/api/quiz', { method: 'POST', ... });
+```
+
+### localStorage Keys
+```
+playlearn_voice    → selected TTS voice
+playlearn_theme    → 'night' | 'light' | 'sepia' | 'forest'
+playlearn_mode     → 'read' | 'learn'
+ai_reader_audit_*  → AuditService session data
+```
+
+### PDF Handling
+- Parsed client-side via `pdfjs-dist` — no file upload to server
+- `pdfPageTexts: string[]` passed through App state
+- `InputView` manages the PDF file object and extracted text
+
+---
+
+## 🎨 Design Principles
+
+- **Cinematic motion**: Use Framer Motion with easing curves, not instant transitions
+- **CSS-first**: Prefer CSS animations for simple effects, Framer Motion for page transitions
+- **Theme-aware**: Every new element must work across all 4 themes
+- **Mobile-first**: Test at 375px width — audio player must not overlap text
+- **No UI libraries**: Pure CSS only — no Tailwind, no shadcn, no MUI
+
+---
+
+## ✅ Code Standards
+
+- **TypeScript strict mode** — no `any`, no `@ts-ignore` without comment
+- **Functional components** — no class components
+- **Named exports** for components (except `default export` at file bottom)
+- **Descriptive variable names** — `handleStartReading`, not `handle1`
+- **Error boundaries** — wrap async operations in try/catch
+- **No dead code** — remove commented-out code before committing
+
+---
+
+## 🚫 Do NOT
+
+- ❌ Call OpenAI API from the frontend
+- ❌ Commit `.env` files
+- ❌ Use `any` type in TypeScript
+- ❌ Add inline styles (use CSS classes)
+- ❌ Break the `runIdRef` guard in ReaderView
+- ❌ Add new npm packages without checking bundle size impact
+- ❌ Use `localStorage` directly — use `AuditService` or the established keys
+
+---
+
+## 📦 Deployment
+
+- **Frontend**: Vercel, auto-deploys from `master` — https://ai-reader-phi.vercel.app
+  - `VITE_API_URL` = `https://alphie-api.nyobelipot.workers.dev` (Production + Preview)
+  - Vite inlines it at build time: after changing it, redeploy the frontend
+- **Backend**: Cloudflare Worker `alphie-api` — deploy with `cd worker && npx wrangler deploy`
+  (not automatic: redeploy the Worker after changing `backend/lib/core.js` or `worker/`)
+  - Secrets: `OPENAI_API_KEY`, `AZURE_SPEECH_KEY` (`npx wrangler secret put <NAME>`)
+  - Vars in `worker/wrangler.toml`: `AZURE_SPEECH_REGION=francecentral`, `ALLOWED_ORIGINS`
+  - A new frontend domain must be added to `ALLOWED_ORIGINS`, or the browser blocks calls
+  - Full guide: `worker/README.md`
+- **Azure Speech**: resource `alphie-speech-tts` (group `alphie-rg`, France Central), Free F0 tier
+- **Railway**: no longer used (trial ended); the Worker replaced it
